@@ -26,9 +26,11 @@ const allowedOrigins = [
     "http://localhost:5175",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
-    "http://127.0.0.1:5175"
+    "http://127.0.0.1:5175",
+    "https://zink-zaika-client.vercel.app",
+    "https://zink-zaika-admin.vercel.app"
 ].filter(Boolean); // Remove undefined values
-
+console.log("pasing......")
 const io = new Server(server, {
     cors: {
         origin: (origin, callback) => {

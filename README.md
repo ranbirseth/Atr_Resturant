@@ -1,218 +1,150 @@
+# 🍽️ Aatreyo Restaurant (Zink Zaika)
 
-# Zink Zaika – Advanced Restaurant Management System
+A modern, full-stack restaurant management system featuring real-time ordering, a powerful admin dashboard, and an integrated local print service for automated KOT (Kitchen Order Ticket) printing.
 
-Zink Zaika is a full-stack, production-ready restaurant management platform. It features a modern, mobile-first customer ordering app and a powerful real-time admin dashboard, both built with React and Vite, and a robust Node.js/Express backend with MongoDB. The system is designed for seamless restaurant operations, real-time order management, and analytics.
+![Project Banner](https://via.placeholder.com/1200x300?text=Aatreyo+Restaurant+Management+System)
 
----
+## 🌟 client url
+https://atr-resturant.vercel.app/
+## 🌟 admin url
+https://atr-resturant-admin.vercel.app/
+### 📱 Customer App (Client)
+- **Mobile-First Design**: Optimized for seamless ordering on any device.
+- **Real-Time Data**: Live menu availability and order status updates via Socket.IO.
+- **Smart Cart**: interactive cart with upsell suggestions and detailed bill summary.
+- **Order Tracking**: Live countdown and status tracking (Pending → Preparing → Ready).
+- **Floating Cart**: Quick access to checkout from anywhere on the menu.
 
-## 🌟 Key Features & Architecture
+### ⚡ Admin Dashboard
+- **Live Order Feed**: Instant notifications for incoming orders.
+- **Session Management**: Group orders by customer session for efficient tracking.
+- **Menu Management**: Add, edit, and delete items with image support.
+- **Bill Generation**: Generate PDF bills and share via WhatsApp.
+- **Analytics**: Visual insights into sales and order trends.
 
-### 1. Customer Application (Client)
-
-- **Interactive Menu & Search**
-	- Browse food items by category, with instant search and filtering.
-	- Menu data is fetched from the backend and cached for performance.
-
-- **Cart & Order Customization**
-	- Add/remove items, adjust quantities, and customize orders.
-	- Cart state is managed via React Context for persistence across navigation.
-
-- **Order Placement & Real-Time Status**
-	- Place dine-in or takeaway orders.
-	- Order status updates in real-time (Pending → Preparing → Ready) via Socket.IO.
-
-- **Coupon System**
-	- Apply discount codes at checkout.
-	- Coupon validation is handled server-side for security.
-
-- **Upsell Modal**
-	- Intelligent upsell suggestions based on cart contents, using backend rules.
-
-- **User Authentication**
-	- Phone number-based login; new users are auto-registered.
+### 🖨️ Print Service (New!)
+- **Automated KOT Printing**: Automatically prints orders to the kitchen printer upon acceptance.
+- **Silent Printing**: Runs in the background on the local machine.
+- **Mock Mode**: Supports testing without physical hardware.
 
 ---
 
-### 2. Admin Dashboard
+## 🏗️ System Architecture
 
-- **Authentication**
-	- Secured with a secret admin code (from environment variables).
-	- Session persists via local storage and context.
-
-- **Real-Time Order Management**
-	- Live order feed with instant notifications for new/updated orders (Socket.IO).
-	- Update order status, view order details, and manage sessions.
-
-- **Menu & Category Management**
-	- Add, edit, or delete menu items and categories.
-	- Menu changes are reflected instantly for all users.
-
-- **User & Coupon Management**
-	- View all registered users and their order history.
-	- Create, edit, and delete coupons with usage tracking.
-
-- **Analytics & Reporting**
-	- Visual dashboards (Recharts) for sales, order trends, and category performance.
-	- Exportable reports (future roadmap).
-
-- **Session Grouping**
-	- Orders are grouped by session for easier management during busy hours.
-
----
-
-### 3. Backend (Server)
-
-- **RESTful API**
-	- Modular Express routes for auth, admin, items, orders, coupons, feedback, and upsell logic.
-	- Centralized error handling and validation.
-
-- **Database**
-	- MongoDB with Mongoose ODM.
-	- Models for User, Order, Item, Category, Coupon, Feedback.
-
-- **Real-Time Communication**
-	- Socket.IO for instant updates between client, admin, and kitchen.
-
-- **Security**
-	- Environment-based secrets, CORS configuration, and input validation.
-
-- **Extensible Architecture**
-	- Easily add new features (e.g., payment gateways, advanced analytics).
-
----
-
-## 🗂️ Project Structure
-
+```mermaid
+graph TD
+    User[Customer Device] -->|HTTP/Socket| Server
+    Admin[Admin Dashboard] -->|HTTP/Socket| Server
+    Server[Node.js Server] <-->|Read/Write| DB[(MongoDB)]
+    Server -->|Socket Events| Admin
+    Server -->|Socket Events| User
+    Admin -->|Trigger Print| Server
+    Admin -->|Direct Local Print| PrintService[Local Print Service]
+    PrintService -->|USB/Network| Printer[Thermal Printer]
 ```
-Zink_zaika/
-├── client/           # Customer React app (Vite, Tailwind, Context)
-├── AdminDashbord/    # Admin React app (Vite, Tailwind, Recharts, Socket.IO)
-├── server/           # Node.js/Express backend (MongoDB, Socket.IO)
-└── README.md         # This file
-```
-
----
-
-## ⚙️ How It Works
-
-### Data Flow
-
-1. **Menu & Orders**
-	 - Menu data is fetched from the backend and displayed in both client and admin apps.
-	 - Orders placed by customers are sent to the backend, stored in MongoDB, and broadcast to the admin dashboard in real-time.
-
-2. **Order Status**
-	 - Admin updates order status (e.g., Preparing, Ready).
-	 - Status changes are pushed to the customer app instantly via Socket.IO.
-
-3. **Coupons & Upsell**
-	 - Coupons are validated server-side.
-	 - Upsell suggestions are generated using backend rules and shown in the client app.
-
-4. **Analytics**
-	 - Sales and order data are aggregated and visualized in the admin dashboard.
-
----
 
 ## 🛠️ Tech Stack
 
-- **Frontend:** React.js (Vite), Tailwind CSS, Recharts, Framer Motion, Lucide React, Socket.IO Client
-- **Backend:** Node.js, Express.js, MongoDB (Mongoose), Socket.IO, Dotenv, CORS
-- **Dev Tools:** ESLint, Prettier, Nodemon, Vercel (deployment)
+- **Frontend**: React.js, Vite, Tailwind CSS, Lucide Icons, Framer Motion
+- **Backend**: Node.js, Express.js, Socket.IO
+- **Database**: MongoDB (Mongoose ODM)
+- **Real-Time**: Socket.IO (Bidirectional communication)
+- **Printing**: Node-thermal-printer, local express server
 
 ---
 
-## 🚀 Setup & Installation
+## 🚀 Getting Started
 
-### Prerequisites
+Follow these steps to set up the entire system locally.
 
-- Node.js v14+
-- MongoDB (local or Atlas)
-- Git
+### 1. Prerequisites
+- **Node.js** (v16 or higher)
+- **MongoDB** (Local or Atlas URI)
+- **Git**
 
-### 1. Clone the Repository
+### 2. Installation
 
-```bash
-git clone https://github.com/ranbirseth/resturant.git
-cd resturant
-```
-
-### 2. Backend Setup
-
+#### 🖥️ Backend (Server)
+The heart of the application.
 ```bash
 cd server
 npm install
-# Configure .env (see .env.example)
-npm run dev
-# Runs on http://localhost:5000
+# Configure .env (see Configuration section)
+npm start
+# Runs on Port 5000
 ```
 
-### 3. Admin Dashboard
-
+#### 👑 Admin Dashboard
+The control center for restaurant staff.
 ```bash
 cd AdminDashbord
 npm install
 npm run dev
-# Runs on http://localhost:5174
+# Runs on Port 5174
 ```
 
-### 4. Client App
-
+#### 📱 Client App
+The customer-facing ordering interface.
 ```bash
 cd client
 npm install
 npm run dev
-# Runs on http://localhost:5173
+# Runs on Port 5173
+```
+
+#### 🖨️ Print Service (Optional)
+Run this on the machine connected to the thermal printer.
+```bash
+cd print-service
+npm install
+npm start
+# Runs on Port 6000
 ```
 
 ---
 
-## 🔌 API Endpoints
+## ⚙️ Configuration
 
-- `/api/auth` – User login/registration
-- `/api/admin` – Admin verification
-- `/api/items` – Menu CRUD
-- `/api/orders` – Order management
-- `/api/coupons` – Coupon validation/management
-- `/api/feedback` – Customer feedback
-- `/api/upsell` – Upsell logic
+Create a `.env` file in the `server` directory with the following variables:
 
----
+```env
+# Server Configuration
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/aatreyo_db
+# OR your MongoDB Atlas URI
 
-## 🔐 Authentication
+# CORS Configuration (Allowed Origins)
+CLIENT_URL=http://localhost:5173
+ADMIN_URL=http://localhost:5174
 
-- **Users:** Phone number login, auto-registration.
-- **Admins:** Secret code (set in `.env` as `ADMIN_SECRET_CODE`).
+# Security
+JWT_SECRET=your_super_secret_jwt_key
+ADMIN_SECRET_CODE=12345
+```
 
----
-
-## 🧩 Extending the System
-
-- **Add Payment Gateway:** Integrate Stripe/Razorpay in both client and backend.
-- **Advanced Analytics:** Add exportable reports and more granular metrics.
-- **Dark Mode:** Implement Tailwind dark mode in client app.
-- **JWT Auth:** Upgrade admin authentication to JWT for enhanced security.
+For the **Client** and **Admin** apps, ensure `src/config.js` or `.env` points to the correct backend URL (default `http://localhost:5000`).
 
 ---
 
-## 📝 Contribution Guide
+## 🐛 Troubleshooting
 
-1. Fork the repo and create a feature branch.
-2. Make your changes and commit with clear messages.
-3. Push and open a pull request.
+### Common Issues
+
+**1. Port 6000 is occupied (Print Service Error)**
+- **Error**: `EADDRINUSE: address already in use :::6000`
+- **Fix**: Port 6000 is often reserved by browsers (like Chrome) as unsafe. 
+    - *Solution*: Change the port in `print-service/index.js` to `6001` or another safe port, and update the Admin Dashboard configuration to match.
+    - *Windows Fix*: Run `net stop "Print Spooler"` (only if conflict is with spooler, unlikely) or identify the process using `netstat -ano | findstr :6000` and kill it.
+
+**2. Images not loading**
+- Ensure images are placed in the `public` folder or hosted correctly.
+- Check `server.js` static file serving configuration if images are uploaded to the backend.
+
+**3. Real-time updates not working**
+- Verify `Socket.IO` connection in the browser console.
+- Ensure Server, Client, and Admin are allowed in CORS settings.
 
 ---
 
 ## 📄 License
-
-MIT License. See `LICENSE` for details.
-
----
-
-## 📞 Support
-
-For issues, open a GitHub issue or contact the maintainer.
-
----
-
-This README provides a comprehensive overview for developers, contributors, and advanced users. For further details, see the codebase and documentation files.
+This project is proprietary software. All rights reserved.

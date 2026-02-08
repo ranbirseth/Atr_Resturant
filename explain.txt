@@ -1,0 +1,648 @@
+================================================================================
+          ZINK ZAIKA - RESTAURANT MANAGEMENT SYSTEM
+                    PROJECT METADATA & DOCUMENTATION
+                  (For AI Agents & Future Development)
+================================================================================
+
+PROJECT NAME: Zink Zaika
+PROJECT TYPE: Full-Stack Web Application - Restaurant Management System
+STATUS: Production-Ready with Local Development Setup
+
+================================================================================
+                          PROJECT OVERVIEW
+================================================================================
+
+Zink Zaika is a comprehensive restaurant management system with three main 
+applications:
+1. Customer Application (Client) - For customers to browse menu and place orders
+2. Admin Dashboard - For staff/managers to manage orders, menus, coupons, analytics
+3. Backend Server - Node.js/Express API server handling all business logic
+
+The system enables restaurants to:
+- Accept and manage customer orders in real-time
+- Display menu items with categories, images, ratings
+- Apply coupon codes for discounts
+- Track order status (Pending -> Preparing -> Ready -> Completed)
+- Group orders by customer sessions
+- Provide analytics and sales insights to admin
+- Generate PDF bills for orders
+
+================================================================================
+                         TECHNOLOGY STACK
+================================================================================
+
+FRONTEND (Client Application):
+  - Framework: React.js 18.2.0 with Vite 5.0.0 (for fast development)
+  - Styling: Tailwind CSS 3.4.19 + PostCSS
+  - Icons: Lucide React 0.292.0
+  - HTTP Client: Axios 1.6.2
+  - Routing: React Router DOM 6.20.0
+  - State Management: React Context API + useState hooks
+  - Real-time: Socket.IO Client (for order status updates)
+  - Build Tool: Vite (faster than Create React App)
+  - Port: http://localhost:5173
+
+FRONTEND (Admin Dashboard):
+  - Framework: React.js 19.2.0 with Vite 7.2.4
+  - Styling: Tailwind CSS 4.1.18 + PostCSS
+  - Icons: Lucide React 0.561.0
+  - HTTP Client: Axios 1.13.2
+  - Routing: React Router DOM 7.11.0
+  - State Management: React Context API + useState hooks
+  - Real-time: Socket.IO Client 4.8.1
+  - Charts: Recharts 3.6.0 (for analytics/dashboard charts)
+  - Animations: Framer Motion 12.23.26 (for smooth UI transitions)
+  - PDF Generation: jsPDF 4.0.0 + jsPDF-AutoTable 5.0.7
+  - Port: http://localhost:5174
+
+BACKEND (Server):
+  - Runtime: Node.js (v14+)
+  - Framework: Express.js 4.18.2
+  - Database: MongoDB 7.x (Mongoose 7.6.3 ODM)
+  - Real-time Communication: Socket.IO 4.8.1
+  - CORS: cors 2.8.5 (Cross-Origin Resource Sharing)
+  - File Upload: multer 2.0.2
+  - Environment: dotenv 16.3.1
+  - Development: nodemon 3.0.1
+  - Port: http://localhost:5000
+
+DATABASE:
+  - MongoDB (Local or MongoDB Atlas)
+  - Default connection: mongodb://localhost:27017/zink_zaika
+  - Collections: users, items, orders, coupons, feedbacks
+
+================================================================================
+                       FOLDER STRUCTURE & PURPOSES
+================================================================================
+
+restaurant/
+├── README.md                    # Main project documentation
+├── CHANGES.md                   # Log of changes for local development
+├── LOCAL_SETUP.md              # Detailed setup instructions
+├── SESSION_GROUPING_README.md   # Documentation for session grouping feature
+├── features.txt                # Comprehensive feature list
+├── link.txt                    # Important links/resources
+├── CORS_FIX.md                 # CORS configuration documentation
+├── github_deployment.md        # GitHub deployment notes
+├── DEPLOYMENT_SUMMARY.md       # Deployment summary
+
+CLIENT/ (Customer Facing Application)
+├── package.json                # Dependencies & scripts
+├── vite.config.js              # Vite configuration
+├── tailwind.config.js          # Tailwind CSS configuration
+├── postcss.config.js           # PostCSS configuration
+├── index.html                  # HTML entry point
+├── src/
+│   ├── main.jsx                # React app entry point
+│   ├── App.jsx                 # Main app component
+│   ├── config.js               # API URL & Socket URL configuration
+│   ├── index.css               # Global CSS styles
+│   ├── context/
+│   │   └── AppContext.jsx      # Global app state (user, menu, cart, coupon)
+│   ├── components/
+│   │   ├── Navbar.jsx          # Navigation bar
+│   │   ├── FoodCard.jsx        # Individual food item card
+│   │   ├── CouponCard.jsx      # Coupon display
+│   │   ├── CouponInput.jsx     # Coupon code input
+│   │   └── FeedbackModal.jsx   # Feedback/rating modal
+│   └── pages/
+│       ├── Home.jsx            # Main menu browsing page
+│       ├── Login.jsx           # User login/registration
+│       ├── OrderType.jsx       # Select dine-in or takeaway
+│       ├── CustomizeOrder.jsx  # Item customization (if needed)
+│       ├── FoodDetails.jsx     # Detailed food item view
+│       ├── Cart.jsx            # Shopping cart & checkout
+│       └── Countdown.jsx       # Order countdown timer
+
+ADMINDASHBOARD/ (Admin Control Panel)
+├── package.json                # Dependencies & scripts
+├── vite.config.js              # Vite configuration
+├── tailwind.config.js          # Tailwind CSS configuration
+├── postcss.config.js           # PostCSS configuration
+├── index.html                  # HTML entry point
+├── src/
+│   ├── main.jsx                # React app entry point
+│   ├── App.jsx                 # Main app component
+│   ├── config.js               # API URL & Socket URL configuration
+│   ├── index.css               # Global CSS styles
+│   ├── context/
+│   │   └── SocketContext.jsx   # Socket.IO context for real-time updates
+│   ├── hooks/
+│   │   └── useAdminAuth.js     # Admin authentication hook
+│   ├── components/
+│   │   ├── AdminAuth.jsx       # Admin login component
+│   │   ├── SessionOrderCard.jsx# Card component for grouped orders
+│   │   └── ui/                 # Reusable UI components
+│   │       ├── Button.jsx
+│   │       ├── Card.jsx
+│   │       ├── Input.jsx
+│   │       ├── Modal.jsx
+│   │       ├── Table.jsx
+│   │       └── Badge.jsx
+│   ├── layouts/
+│   │   ├── AdminLayout.jsx     # Main layout with sidebar & navbar
+│   │   ├── Navbar.jsx          # Admin navbar
+│   │   └── Sidebar.jsx         # Admin sidebar navigation
+│   ├── services/
+│   │   ├── adminApi.js         # Admin-specific API calls
+│   │   ├── itemService.js      # Menu item API calls
+│   │   └── orderService.js     # Order API calls (includes grouped orders)
+│   ├── utils/
+│   │   └── api.js              # Common API utilities
+│   └── pages/
+│       ├── Dashboard.jsx       # Main dashboard with overview
+│       ├── Orders.jsx          # Orders management (session-grouped)
+│       ├── Menu.jsx            # Menu items management
+│       ├── Categories.jsx      # Category management
+│       ├── Coupons.jsx         # Coupon management
+│       ├── Users.jsx           # User management & viewing
+│       ├── Analytics.jsx       # Sales analytics & charts
+│       └── Settings.jsx        # Admin settings
+
+SERVER/ (Backend API)
+├── server.js                   # Main server entry point
+├── package.json                # Dependencies & scripts
+├── .env                        # Environment variables (not in git)
+├── .env.example                # Example environment variables template
+├── config/
+│   └── db.js                   # MongoDB connection setup
+├── controllers/
+│   ├── authController.js       # User login/registration logic
+│   ├── itemController.js       # Menu items management logic
+│   ├── orderController.js      # Order creation, status updates, session grouping
+│   └── (coupon/feedback controllers as separate routes)
+├── models/
+│   ├── User.js                 # User schema (name, mobile)
+│   ├── Item.js                 # Food item schema
+│   ├── Order.js                # Order schema with sessionId
+│   ├── Coupon.js               # Discount coupon schema
+│   └── Feedback.js             # Customer feedback schema
+├── routes/
+│   ├── authRoutes.js           # GET/POST for user authentication
+│   ├── itemRoutes.js           # CRUD for menu items
+│   ├── orderRoutes.js          # CRUD for orders, /grouped endpoint
+│   ├── adminAuth.js            # Admin authentication routes
+│   ├── couponRoutes.js         # Coupon management
+│   └── feedbackRoutes.js       # Feedback submission
+├── middleware/
+│   └── upload.js               # Multer configuration for file uploads
+├── utils/
+│   └── SessionManager.js       # Session ID generation utility
+├── scripts/
+│   ├── seedMenu.js             # Script to seed initial menu items
+│   └── migrateExistingOrders.js# Migration script to add sessionIds
+└── uploads/                    # Directory for uploaded images
+
+================================================================================
+                       DATABASE SCHEMA & MODELS
+================================================================================
+
+USER MODEL:
+  Fields:
+    - _id (ObjectId) - Auto-generated MongoDB ID
+    - name (String, Required) - Customer's full name (letters only)
+    - mobile (String, Required, Unique) - 10-digit phone number
+    - createdAt (Date) - User registration timestamp
+    - updatedAt (Date) - Last update timestamp
+
+ITEM MODEL (Menu Items):
+  Fields:
+    - _id (ObjectId) - Auto-generated MongoDB ID
+    - name (String, Required) - Food item name
+    - price (Number, Required) - Price in currency units
+    - description (String) - Item description
+    - image (String) - Image URL or path
+    - category (String, Required) - Category (Main Course, Starters, etc.)
+    - isVeg (Boolean, Default: true) - Vegetarian flag
+    - estimatedPreparationTime (Number) - Time in minutes
+    - rating (Number, Default: 0) - Customer rating (0-5)
+    - createdAt (Date) - Creation timestamp
+    - updatedAt (Date) - Last update timestamp
+
+ORDER MODEL:
+  Fields:
+    - _id (ObjectId) - Auto-generated MongoDB ID
+    - userId (ObjectId, Ref: User, Required) - Customer reference
+    - sessionId (String, Required, Indexed) - Format: user_{userId}_date_{YYYYMMDD}
+    - items (Array of Objects) - Order items
+      * itemId (ObjectId, Ref: Item) - Menu item reference
+      * name (String) - Item name
+      * quantity (Number) - Quantity ordered
+      * price (Number) - Item price at order time
+      * customizations (Array of Strings) - Special requests (e.g., "Extra spicy")
+    - totalAmount (Number, Required) - Final payable amount (after discount)
+    - grossTotal (Number) - Subtotal before discount
+    - couponCode (String) - Applied coupon code (if any)
+    - discountAmount (Number, Default: 0) - Discount value
+    - orderType (String, Enum: 'Dine-in'|'Takeaway', Required)
+    - tableNumber (String) - Table number (required for dine-in)
+    - status (String, Enum: 'Pending'|'Preparing'|'Ready'|'Completed')
+    - feedbackStatus (String, Enum: 'Pending'|'Requested'|'Submitted'|'Skipped')
+    - completionConfig.countDownSeconds (Number) - Countdown timer in seconds
+    - createdAt (Date) - Order creation timestamp
+    - updatedAt (Date) - Last update timestamp
+  Indexes:
+    - sessionId (single)
+    - sessionId + createdAt (compound) - For efficient session queries
+
+COUPON MODEL:
+  Fields:
+    - _id (ObjectId) - Auto-generated MongoDB ID
+    - code (String, Required, Unique, Uppercase) - Coupon code (e.g., "SAVE10")
+    - discountType (String, Enum: 'PERCENT'|'FLAT', Required)
+    - value (Number, Required) - Discount percentage or flat amount
+    - minOrderAmount (Number, Default: 0) - Minimum order amount to apply
+    - isActive (Boolean, Default: true) - Coupon availability flag
+    - createdAt (Date) - Creation timestamp
+    - updatedAt (Date) - Last update timestamp
+
+FEEDBACK MODEL:
+  Fields:
+    - _id (ObjectId) - Auto-generated MongoDB ID
+    - orderId (ObjectId, Ref: Order, Required) - Related order
+    - userId (ObjectId, Ref: User, Required) - Customer reference
+    - rating (Number) - Rating (1-5 stars)
+    - comment (String) - Customer feedback text
+    - createdAt (Date) - Submission timestamp
+
+================================================================================
+                       API ENDPOINTS OVERVIEW
+================================================================================
+
+AUTHENTICATION ROUTES (/api/auth):
+  POST /login
+    - Body: { name, mobile }
+    - Response: User object with _id
+  
+ITEM/MENU ROUTES (/api/items):
+  GET / - Get all items (with optional category filter)
+  GET /:id - Get specific item by ID
+  POST / - Create new item (Admin)
+  PUT /:id - Update item (Admin)
+  DELETE /:id - Delete item (Admin)
+  POST /seed - Seed initial menu data
+
+ORDER ROUTES (/api/orders):
+  POST / - Create new order
+    Body: { userId, items, totalAmount, orderType, tableNumber, couponCode, discountAmount, grossTotal }
+  GET / - Get all orders
+  GET /grouped - Get session-grouped orders (IMPORTANT: use this for dashboard)
+  GET /:id - Get specific order by ID
+  PUT /:id/status - Update order status
+    Body: { status }
+
+COUPON ROUTES (/api/coupons):
+  GET / - Get all active coupons
+  GET /:code - Validate coupon code
+  POST / - Create coupon (Admin)
+  PUT /:id - Update coupon (Admin)
+  DELETE /:id - Delete coupon (Admin)
+
+FEEDBACK ROUTES (/api/feedback):
+  POST / - Submit order feedback
+  GET / - Get all feedback (Admin)
+
+ADMIN ROUTES (/api/admin):
+  POST /login - Admin login with secret code
+  GET /users - Get all users
+  GET /analytics - Get sales analytics data
+
+================================================================================
+                       KEY FEATURES & FUNCTIONALITY
+================================================================================
+
+1. CUSTOMER APPLICATION (Client)
+   - Browse menu by categories (Main Course, Starters, Breads, Beverages, Desserts)
+   - Filter items by Veg/Non-Veg
+   - Search for items
+   - Add items to cart with quantity
+   - Customize items (special requests)
+   - Apply coupon codes for discounts
+   - Select order type (Dine-in with table number, or Takeaway)
+   - Real-time order status tracking
+   - Countdown timer for order completion
+   - Feedback/rating modal after order completion
+   - Cart persistence with local storage
+
+2. ADMIN DASHBOARD
+   - Real-time order notifications via Socket.IO
+   - Session-grouped order view (all orders from same customer in one session)
+   - Expandable order details with first 3 items preview
+   - Order status management (Pending -> Preparing -> Ready -> Completed)
+   - Menu management (Add, Edit, Delete items)
+   - Category management
+   - Coupon code management
+   - User management and order history
+   - Sales analytics with Recharts charts
+   - PDF bill generation for sessions
+   - Admin settings
+
+3. SESSION GROUPING FEATURE
+   - Orders are automatically grouped by sessionId
+   - SessionId format: user_{userId}_date_{YYYYMMDD}
+   - All orders from same customer on same day are grouped together
+   - Session status updates apply to all orders in session
+   - Grouped endpoint: GET /api/orders/grouped
+   - Real-time Socket.IO event: 'sessionOrderUpdate'
+
+4. REAL-TIME COMMUNICATION
+   - Socket.IO for instant notifications
+   - Admin receives real-time alerts for new orders
+   - Customer app shows real-time order status updates
+   - Dashboard auto-updates when new orders arrive
+
+5. COUPON SYSTEM
+   - Two discount types: Percentage (%) and Flat amount ($)
+   - Minimum order amount requirement
+   - Active/Inactive toggle for coupons
+   - Automatic discount calculation
+
+================================================================================
+                       CONFIGURATION & ENVIRONMENT
+================================================================================
+
+ENVIRONMENT VARIABLES (server/.env):
+  PORT=5000 - Server port
+  MONGO_URI=mongodb://localhost:27017/zink_zaika - MongoDB connection string
+  ADMIN_SECRET_CODE=ADMIN2024 - Admin login secret code
+  CLIENT_URL=http://localhost:5173 - Client application URL (optional)
+  ADMIN_URL=http://localhost:5174 - Admin dashboard URL (optional)
+
+CORS CONFIGURATION:
+  Allowed Origins:
+    - http://localhost:5173 (Client)
+    - http://localhost:5174 (Admin)
+    - http://127.0.0.1:5173 (Client alternative)
+    - http://127.0.0.1:5174 (Admin alternative)
+  Methods: GET, POST, PUT, DELETE
+  Credentials: true (for cookies/auth)
+
+CLIENT CONFIG (client/src/config.js):
+  API_URL = "http://localhost:5000/api" (default)
+  SOCKET_URL = "http://localhost:5000" (default)
+
+ADMIN CONFIG (AdminDashbord/src/config.js):
+  Same as client config
+
+================================================================================
+                         STARTUP PROCEDURE
+================================================================================
+
+PREREQUISITES:
+  - Node.js v14+ installed
+  - MongoDB running (local or Atlas URI in .env)
+  - Git installed
+
+STARTING THE PROJECT (3 separate terminals):
+
+TERMINAL 1 - Backend Server:
+  cd server
+  npm install
+  Create .env file with MONGO_URI and PORT
+  npm run dev
+  Expected: Server running on http://localhost:5000
+
+TERMINAL 2 - Client Application:
+  cd client
+  npm install
+  npm run dev
+  Expected: Client running on http://localhost:5173
+
+TERMINAL 3 - Admin Dashboard:
+  cd AdminDashbord
+  npm install
+  npm run dev
+  Expected: Admin running on http://localhost:5174
+
+All three must be running for full functionality.
+
+================================================================================
+                       IMPORTANT UTILITIES & HELPERS
+================================================================================
+
+SessionManager.js (server/utils/SessionManager.js):
+  - Purpose: Generates and manages session IDs
+  - Method: getCurrentSessionId(userId)
+  - Format: user_{userId}_date_{YYYYMMDD}
+  - Used in: orderController.js when creating orders
+
+Socket.IO Integration:
+  - Server: server.js initializes io with CORS config
+  - Client: SocketContext.jsx provides socket connection
+  - Events: 'sessionOrderUpdate' for new orders
+  - Usage: Admin dashboard listens for real-time updates
+
+Order Aggregation Pipeline:
+  - Used in getGroupedOrders() function
+  - Groups orders by sessionId
+  - Calculates combined totals
+  - Includes user details population
+
+Migration Script (scripts/migrateExistingOrders.js):
+  - Adds sessionIds to existing orders
+  - Run once if upgrading from pre-session version
+  - Command: node scripts/migrateExistingOrders.js
+
+================================================================================
+                       IMPORTANT CODE PATTERNS
+================================================================================
+
+CONTEXT API USAGE:
+  // In AppContext.jsx (Client)
+  - Global state: user, menuItems, cart, coupon, loading
+  - Methods: login(), logout(), addToCart(), removeFromCart(), etc.
+  - Usage: useContext(AppContext) in components
+
+  // In SocketContext.jsx (Admin)
+  - Global state: socket connection
+  - Usage: useSocket() custom hook in components
+
+API CALLS PATTERN:
+  - All HTTP requests use axios
+  - Base URL from config.js
+  - Error handling with try-catch
+  - Response data extraction with res.data
+
+COMPONENT STRUCTURE:
+  - Functional components with hooks
+  - useState for local state
+  - useEffect for side effects
+  - Props passing for component communication
+  - Tailwind CSS for styling
+
+================================================================================
+                       DEPLOYMENT INFORMATION
+================================================================================
+
+CURRENT STATUS: Configured for local development
+
+DEPLOYMENT OPTIONS (documented in):
+  - github_deployment.md (GitHub Pages/Actions)
+  - QUICK_DEPLOY.md (Quick deployment guide)
+  - RAILWAY_DEPLOYMENT.md (Railway.app platform)
+  - DEPLOYMENT_SUMMARY.md (Summary of deployment process)
+
+For deployment changes needed:
+  - Update CORS origins in server.js
+  - Update API URLs in client/src/config.js
+  - Update API URLs in AdminDashbord/src/config.js
+  - Use environment variables for different environments
+  - Update .env file with production MongoDB URI
+
+================================================================================
+                       FILE DEPENDENCIES & RELATIONSHIPS
+================================================================================
+
+CLIENT APP DEPENDENCIES:
+  AppContext.jsx
+    ↓ imports from config.js
+  Navbar.jsx, Home.jsx, Cart.jsx, Login.jsx
+    ↓ use AppContext via useContext hook
+  All pages use components and styles
+
+ADMIN APP DEPENDENCIES:
+  SocketContext.jsx
+    ↓ imports SOCKET_URL from config.js
+  AdminLayout.jsx
+    ↓ contains Navbar.jsx and Sidebar.jsx
+  Orders.jsx
+    ↓ imports SessionOrderCard.jsx component
+    ↓ uses orderService.js for getGroupedOrders()
+  All pages import from services/ for API calls
+
+SERVER DEPENDENCIES:
+  server.js
+    ↓ imports all routes (authRoutes, itemRoutes, orderRoutes, etc.)
+    ↓ connects to database via config/db.js
+    ↓ sets up Express middleware and Socket.IO
+  controllers/
+    ↓ import models (User, Item, Order, Coupon, Feedback)
+    ↓ import SessionManager.js
+  models/
+    ↓ define MongoDB schemas and indexes
+  routes/
+    ↓ import controllers and define endpoints
+
+================================================================================
+                       COMMON OPERATIONS FOR AI AGENTS
+================================================================================
+
+ADDING A NEW MENU ITEM:
+  1. Use POST /api/items endpoint
+  2. Include: name, price, description, image, category, isVeg
+  3. Added item will appear in all client apps
+
+CREATING AN ORDER:
+  1. POST /api/orders with: userId, items[], orderType, tableNumber, etc.
+  2. SessionId auto-generated in controller
+  3. Socket.IO emits 'sessionOrderUpdate' event
+  4. Admin dashboard receives real-time notification
+
+UPDATING ORDER STATUS:
+  1. PUT /api/orders/{orderId}/status with: { status }
+  2. All orders in same session updated together
+  3. Real-time update sent to admin dashboard
+
+APPLYING COUPON:
+  1. GET /api/coupons/{code} to validate
+  2. If valid, calculate discount
+  3. Include in order creation
+
+ADMIN LOGIN:
+  1. POST /api/admin/login with secret code from .env
+  2. Returns admin session/token (if implemented)
+
+GETTING GROUPED ORDERS:
+  1. GET /api/orders/grouped (Admin only)
+  2. Returns orders grouped by sessionId with combined totals
+
+================================================================================
+                       TESTING & DEBUGGING TIPS
+================================================================================
+
+MONGODB CONNECTION ISSUES:
+  - Check MongoDB is running: mongod (Windows) or brew services start mongodb-community (Mac)
+  - Verify MONGO_URI in .env
+  - Check connection URL format: mongodb://localhost:27017/zink_zaika
+
+SOCKET.IO CONNECTION ISSUES:
+  - Verify CORS origins in server.js
+  - Check that admin app is connecting to correct SOCKET_URL
+  - Check browser console for connection errors
+  - Verify server is running before opening admin dashboard
+
+API ENDPOINT ISSUES:
+  - Use Postman or curl to test endpoints
+  - Check request body format matches API expectations
+  - Verify all required fields are included
+  - Check server console for error messages
+
+REAL-TIME UPDATES NOT WORKING:
+  - Verify Socket.IO connection established
+  - Check that req.io is passed to controllers
+  - Verify event names match (sessionOrderUpdate)
+  - Check admin dashboard listening to correct events
+
+CORS ERRORS:
+  - Check origin header in browser request
+  - Verify origin is in allowedOrigins array in server.js
+  - Check credentials: true for cookie-based auth
+  - Restart server after changing CORS config
+
+================================================================================
+                       QUICK REFERENCE - FILE CHECKLIST
+================================================================================
+
+BEFORE MAKING CHANGES, CHECK:
+  ✓ .env file exists with MONGO_URI
+  ✓ MongoDB is running
+  ✓ All three apps configured for localhost
+  ✓ CORS origins correct in server.js
+  ✓ Socket.IO connection paths correct
+  ✓ No hardcoded URLs (use config.js files)
+
+KEY FILES TO MODIFY FOR:
+  - New API endpoint: server/routes/*.js + server/controllers/*.js
+  - New database field: server/models/*.js + order/item schema changes
+  - New client feature: client/src/pages/*.jsx + components
+  - New admin feature: AdminDashbord/src/pages/*.jsx + components
+  - Configuration change: config.js files in both client and admin
+  - CORS/deployment: server/server.js
+
+KEY FILES TO READ FOR UNDERSTANDING:
+  - README.md - Project overview
+  - LOCAL_SETUP.md - Setup instructions
+  - SESSION_GROUPING_README.md - Session feature details
+  - server.js - Server initialization and middleware
+  - config/db.js - Database connection
+  - models/*.js - Data structure definition
+  - routes/*.js - API endpoint definitions
+  - controllers/*.js - Business logic
+  - context/*.jsx - State management
+
+================================================================================
+                       ADDITIONAL RESOURCES
+================================================================================
+
+MongoDB Documentation: https://docs.mongodb.com
+Express.js Documentation: https://expressjs.com
+React Documentation: https://react.dev
+Vite Documentation: https://vitejs.dev
+Tailwind CSS Documentation: https://tailwindcss.com
+Socket.IO Documentation: https://socket.io
+Mongoose Documentation: https://mongoosejs.com
+Recharts Documentation: https://recharts.org
+
+================================================================================
+                         END OF PROJECT METADATA
+================================================================================
+
+This document provides comprehensive information about the Zink Zaika 
+Restaurant Management System for AI agents and future developers to understand 
+the project architecture, technologies, data models, and implementation details.
+
+For questions or updates to this documentation, refer to the main README.md 
+and specific feature documentation files in the project root.
+
+Last Updated: January 2026
+Project Version: 1.0.0

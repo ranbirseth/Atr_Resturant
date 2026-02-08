@@ -1,0 +1,38 @@
+--- DB INSPECTION START ---
+Total Users: 25
+Total Orders: 58
+
+--- Sample Order Analysis ---
+Order 0: _id=6984cedbd46745f063770278, userId=6984ce32d46745f063770253 (type: object)
+Order 1: _id=6984cf4dd46745f0637702e9, userId=6984ce32d46745f063770253 (type: object)
+Order 2: _id=6984cf6ed46745f063770309, userId=6984ce32d46745f063770253 (type: object)
+Order 3: _id=6984cf9fd46745f06377032b, userId=6984ce32d46745f063770253 (type: object)
+Order 4: _id=6984d079d46745f063770437, userId=6984d067d46745f063770429 (type: object)
+
+--- Linkage Check ---
+User: kamal (6984d067d46745f063770429) -> Found 2 matches
+User: pihu (6984f96d690ecb9de6b60ea3) -> Found 0 matches
+User: gian (6984fa0688a7d850a4429245) -> Found 1 matches
+User: prem (6985844131874a647c0990be) -> Found 0 matches
+User: ranbir (6985847f31874a647c0990c5) -> Found 4 matches
+User: hbsjdbhxdvbv (6985870c31874a647c09926d) -> Found 0 matches
+User: hbsdhbjhsdbuibsdfd (6985885931874a647c099273) -> Found 3 matches
+User: ranbir seth (6985a9ce31874a647c0994a8) -> Found 1 matches
+User: mahes (69860d347f3f0976413f7876) -> Found 2 matches
+User: hjbsbfjnjsdv (698615827f3f0976413f7a31) -> Found 1 matches
+User: nilam (698619b37f3f0976413f7af6) -> Found 1 matches
+User: kamal (69861a5e7f3f0976413f7b6d) -> Found 1 matches
+User: payal (69861b037f3f0976413f7bb8) -> Found 2 matches
+User: ranbir (69861ca07f3f0976413f7ccd) -> Found 2 matches
+User: somya (69861daa0af4d5e86fcee8f3) -> Found 2 matches
+User: kum (69861efa0af4d5e86fcee967) -> Found 2 matches
+User: sagar (698637a45448c2dd293fd3ea) -> Found 8 matches
+User: manish (698639525448c2dd293fd804) -> Found 3 matches
+User: suresh (69863b0bcf20b97b016edf96) -> Found 4 matches
+User: ranbir (698643315824698b61e50f2e) -> Found 5 matches
+User: hnbh (698647615824698b61e511d8) -> Found 2 matches
+User: fdgfdf (698647eb5824698b61e512db) -> Found 3 matches
+User: jhbjh b (698649a85824698b61e5144f) -> Found 2 matches
+User: dsfdgdf (698766edf8ba6af03e4b7716) -> Found 1 matches
+User: kunal (6987692cf8ba6af03e4b77f6) -> Found 2 matches
+--- DB INSPECTION END ---

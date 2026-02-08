@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
+
+  /* Brand Colors */
+  --color-primary: #D4A017;
+  --color-primaryHover: #B88914;
+  --color-primaryActive: #9C7310;
+  --color-lightAccent: #FFF7ED;
+
+  /* Backgrounds - Light Theme Main */
+  --color-bgMain: #F3F4F6;
+  --color-bgHeader: #FFFFFF;
+  /* was #3D1D13, assuming header aligns with light theme or sidebar? User said "Main Page Background #F3F4F6", "Card Background #FFFFFF". Navbar usually matches Card or Main. Let's make it White for now to match cards. */
+  --color-bgCard: #FFFFFF;
+  --color-bgSidebar: #4A1F0F;
+  --color-bgSidebarHover: #5A2A14;
+  --color-bgSidebarActive: #6B3A18;
+  --color-bgHover: #F3F4F6;
+  /* Light gray for hover in light theme */
+  --color-bgModal: #FFFFFF;
+
+  /* Text - Dark for Light Theme */
+  --color-textPrimary: #111827;
+  --color-textSecondary: #6B7280;
+  --color-textGold: #D4A017;
+  --color-textMuted: #9CA3AF;
+  --color-textDisabled: #D1D5DB;
+  --color-textHighlight: #D4A017;
+  --color-textInverse: #F9FAFB;
+  /* For Sidebar text */
+
+  /* Borders */
+  --color-borderColor: #E5E7EB;
+  --color-dividerColor: #E5E7EB;
+  --color-borderActive: #D4A017;
+
+  --color-success: #16A34A;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+}
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+@layer base {
+  body {
+    @apply bg-bgMain text-textPrimary font-sans min-h-screen;
+    background-attachment: fixed;
+  }
+
+  /* Scrollbar Styling for Premium Feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: theme('colors.bgMain');
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: theme('colors.primary');
+    border-radius: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.primaryHover');
+  }
+}
+
+@layer utilities {
+  .text-shadow-sm {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+
+  .text-gold-400 {
+    color: #d4af37;
+  }
+
+  .text-gold-500 {
+    color: #b08d26;
+  }
+
+  .bg-gold-400 {
+    background-color: #d4af37;
+  }
+
+  .bg-gold-500 {
+    background-color: #b08d26;
+  }
+
+  .bg-gold-500\/10 {
+    background-color: rgb(176 141 38 / 0.1);
+  }
+
+  .border-gold-400 {
+    border-color: #d4af37;
+  }
+
+  .border-gold-500\/20 {
+    border-color: rgb(176 141 38 / 0.2);
+  }
+}

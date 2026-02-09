@@ -15,6 +15,10 @@ const OrderType = () => {
   const [tableNumber, setTableNumber] = useState('');
   const [loading, setLoading] = useState(false);
   const [coupons, setCoupons] = useState([]);
+  
+  // New State for Delivery
+  const [isDelivery, setIsDelivery] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState('');
 
   React.useEffect(() => {
     // Fetch available coupons
@@ -37,6 +41,10 @@ const OrderType = () => {
   const handlePlaceOrder = async () => {
     if (!orderType) return;
     if (orderType === 'Dine-in' && !tableNumber) return;
+    if (isDelivery && !deliveryAddress.trim()) {
+        alert("Please enter a valid delivery address.");
+        return;
+    }
 
     setLoading(true);
     // Construct Order Data
@@ -54,8 +62,18 @@ const OrderType = () => {
         couponCode: coupon?.code,
         discountAmount: coupon?.discountAmount,
         orderType,
-        tableNumber: orderType === 'Dine-in' ? tableNumber : undefined
+        tableNumber: orderType === 'Dine-in' ? tableNumber : undefined,
+        // Delivery Fields
+        isDelivery: isDelivery,
+        deliveryAddress: isDelivery ? deliveryAddress : undefined
     };
+
+    console.log('🛒 Client placing order:', {
+        orderType,
+        isDelivery,
+        deliveryAddress,
+        fullOrderData: orderData
+    });
 
     try {
         await placeOrder(orderData);
@@ -81,7 +99,10 @@ const OrderType = () => {
 
         <div className="grid grid-cols-2 gap-6 mb-12">
             <div 
-                onClick={() => setOrderType('Dine-in')}
+                onClick={() => {
+                    setOrderType('Dine-in');
+                    setIsDelivery(false);
+                }}
                 className={`p-8 rounded-[32px] border-2 flex flex-col items-center gap-4 cursor-pointer transition-all ${
                     orderType === 'Dine-in' 
                     ? 'border-primary bg-bgCard shadow-lg shadow-primary/10' 
@@ -119,6 +140,47 @@ const OrderType = () => {
                     placeholder="Enter table number (e.g. 5)" 
                     className="w-full p-5 rounded-2xl bg-bgCard border border-borderColor/30 text-white focus:outline-none focus:border-primary/50 text-lg placeholder-textSecondary"
                 />
+            </div>
+        )}
+
+        {orderType === 'Takeaway' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 mb-12 space-y-6">
+                {/* Home Delivery Toggle */}
+                <div 
+                    onClick={() => setIsDelivery(!isDelivery)}
+                    className={`p-5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                        isDelivery 
+                        ? 'border-primary bg-bgCard shadow-lg shadow-primary/5' 
+                        : 'border-borderColor/30 bg-bgCard/30 hover:border-primary/30'
+                    }`}
+                >
+                    <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDelivery ? 'bg-primary text-bgMain' : 'bg-bgHeader text-textSecondary'}`}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+                        </div>
+                        <div>
+                            <h3 className={`font-bold ${isDelivery ? 'text-primary' : 'text-textPrimary'}`}>Home Delivery</h3>
+                            <p className="text-xs text-textSecondary">Delivered to your doorstep</p>
+                        </div>
+                    </div>
+                    <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${isDelivery ? 'border-primary bg-primary' : 'border-textSecondary'}`}>
+                        {isDelivery && <span className="text-bgMain font-bold">✓</span>}
+                    </div>
+                </div>
+
+                {/* Address Input */}
+                {isDelivery && (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                        <label className="block text-xs font-bold text-primary mb-3 uppercase tracking-[0.2em]">Delivery Address</label>
+                        <textarea 
+                            value={deliveryAddress}
+                            onChange={(e) => setDeliveryAddress(e.target.value)}
+                            placeholder="Enter full address (e.g. Flat 101, Tasty Street)" 
+                            rows={3}
+                            className="w-full p-5 rounded-2xl bg-bgCard border border-borderColor/30 text-white focus:outline-none focus:border-primary/50 text-base placeholder-textSecondary resize-none"
+                        />
+                    </div>
+                )}
             </div>
         )}
 
@@ -191,9 +253,9 @@ const OrderType = () => {
       <div className="fixed bottom-0 left-0 w-full bg-bgMain/95 backdrop-blur-xl border-t border-borderColor/30 p-6 z-20 shadow-2xl">
         <button 
             onClick={handlePlaceOrder}
-            disabled={!orderType || (orderType === 'Dine-in' && !tableNumber) || loading}
+            disabled={!orderType || (orderType === 'Dine-in' && !tableNumber) || (orderType === 'Takeaway' && isDelivery && !deliveryAddress.trim()) || loading}
             className={`w-full max-w-2xl mx-auto py-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 transition-all uppercase tracking-widest ${
-                !orderType || (orderType === 'Dine-in' && !tableNumber) || loading
+                !orderType || (orderType === 'Dine-in' && !tableNumber) || (orderType === 'Takeaway' && isDelivery && !deliveryAddress.trim()) || loading
                 ? 'bg-bgCard text-textSecondary cursor-not-allowed border border-borderColor/30 opacity-50' 
                 : 'bg-primary text-bgMain shadow-lg shadow-primary/10 hover:bg-primaryHover active:scale-[0.98]'
             }`}

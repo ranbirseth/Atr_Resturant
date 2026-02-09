@@ -7,6 +7,7 @@ const SessionManager = require('../utils/SessionManager');
 // @access  Public (User ID required)
 const createOrder = async (req, res) => {
     const { userId, items, totalAmount, orderType, tableNumber, couponCode, discountAmount, grossTotal } = req.body;
+    console.log('📝 Creating Order Body:', JSON.stringify(req.body, null, 2));
 
     if (!items || items.length === 0) {
         return res.status(400).json({ message: 'No order items' });
@@ -40,6 +41,8 @@ const createOrder = async (req, res) => {
             orderType,
             tableNumber,
             status: 'Pending',
+            deliveryAddress: req.body.deliveryAddress,
+            isDelivery: req.body.isDelivery || false,
             completionConfig: {
                 countDownSeconds: maxPrepTime * 60
             }
@@ -66,6 +69,8 @@ const createOrder = async (req, res) => {
                 sessionId: sessionId,
                 tableNumber: tableNumber,
                 orderType: orderType,
+                isDelivery: req.body.isDelivery,
+                deliveryAddress: req.body.deliveryAddress,
                 totalAmount: totalAmount,
                 itemsCount: items.length,
                 customerName: userId?.name || 'Guest'
@@ -202,6 +207,16 @@ const getGroupedOrders = async (req, res) => {
                     grouped[sessionId].tableNumber = order.tableNumber;
                 }
             }
+            // Capture Delivery Info
+            if (order.isDelivery) {
+                console.log('🚚 Found delivery order:', {
+                    sessionId,
+                    isDelivery: order.isDelivery,
+                    deliveryAddress: order.deliveryAddress
+                });
+                grouped[sessionId].isDelivery = true;
+                grouped[sessionId].deliveryAddress = order.deliveryAddress;
+            }
 
             // Update timestamps to reflect earliest order
             if (new Date(order.createdAt) < new Date(grouped[sessionId].createdAt)) {
@@ -234,6 +249,12 @@ const getGroupedOrders = async (req, res) => {
         const result = Object.values(grouped).sort((a, b) =>
             new Date(b.createdAt) - new Date(a.createdAt)
         );
+
+        console.log('📊 Sending grouped orders to admin:', result.map(r => ({
+            sessionId: r.sessionId.slice(-8),
+            isDelivery: r.isDelivery,
+            deliveryAddress: r.deliveryAddress
+        })));
 
         res.json(result);
     } catch (error) {

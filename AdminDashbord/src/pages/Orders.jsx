@@ -110,6 +110,8 @@ export default function Orders() {
         status: worstStatus,
         orderType: sessionOrderType,
         tableNumber: sessionTableNumber,
+        isDelivery: orders.some(o => o.isDelivery),
+        deliveryAddress: orders.find(o => o.deliveryAddress)?.deliveryAddress,
         createdAt: orders[0]?.createdAt,
         updatedAt: orders[orders.length - 1]?.updatedAt
       };
@@ -149,6 +151,12 @@ export default function Orders() {
       const data = viewMode === 'grouped' 
         ? await getGroupedOrders()
         : await getOrders();
+      
+      console.log('📥 Admin received orders:', data.slice(0, 2).map(d => ({
+        sessionId: d.sessionId?.slice(-8),
+        isDelivery: d.isDelivery,
+        deliveryAddress: d.deliveryAddress
+      })));
       
       setGroupedOrders(data);
     } catch (error) {
@@ -308,9 +316,15 @@ export default function Orders() {
 
     doc.text(`Customer: ${sessionData.userId?.name || 'Guest'}`, 140, 50);
     doc.text(`Phone: ${sessionData.userId?.mobile || 'N/A'}`, 140, 56);
-    doc.text(`Type: ${sessionData.orderType}`, 140, 62);
+    doc.text(`Type: ${sessionData.isDelivery ? 'Home Delivery' : sessionData.orderType}`, 140, 62);
     if (sessionData.tableNumber) {
         doc.text(`Table: ${sessionData.tableNumber}`, 140, 68);
+    }
+    if (sessionData.isDelivery && sessionData.deliveryAddress) {
+        doc.setFontSize(9);
+        const splitAddress = doc.splitTextToSize(`Addr: ${sessionData.deliveryAddress}`, 60);
+        doc.text(splitAddress, 140, 68);
+        doc.setFontSize(10);
     }
 
     // Collect all items from all orders
@@ -511,8 +525,9 @@ export default function Orders() {
                 <div>
                   <p className="text-sm font-bold text-textPrimary">{selectedSession.userId?.name || 'Guest'}</p>
                   <p className="text-xs text-textMuted">
-                    {selectedSession.userId?.mobile} • {selectedSession.orderType}
+                    {selectedSession.userId?.mobile} • {selectedSession.isDelivery ? 'Home Delivery' : selectedSession.orderType}
                     {selectedSession.tableNumber && ` • Table ${selectedSession.tableNumber}`}
+                    {selectedSession.isDelivery && ` • ${selectedSession.deliveryAddress}`}
                   </p>
                 </div>
               </div>

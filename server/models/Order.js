@@ -19,6 +19,8 @@ const orderSchema = new mongoose.Schema({
     orderType: { type: String, enum: ['Dine-in', 'Takeaway'], required: true },
     tableNumber: { type: String }, // Required if Dine-in
     status: { type: String, enum: ['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed', 'Cancelled', 'ChangeRequested', 'Updated'], default: 'Pending' },
+    deliveryAddress: { type: String }, // For Home Delivery
+    isDelivery: { type: Boolean, default: false }, // To distinguish Home Delivery from regular Takeaway
     feedbackStatus: {
         type: String,
         enum: ['Pending', 'Requested', 'Submitted', 'Skipped'],

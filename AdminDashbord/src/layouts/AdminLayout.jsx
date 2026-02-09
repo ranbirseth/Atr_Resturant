@@ -16,8 +16,8 @@ const AdminLayout = () => {
     const handleNewOrder = (order) => {
       console.log('New Order Received:', order);
       setNotification({
-        id: order._id,
-        message: `New Order #${order._id.slice(-6)} received!`,
+        id: order.orderId || order._id,
+        message: `New Order #${(order.orderId || order._id || 'N/A').toString().slice(-6)} received!`,
         total: order.totalAmount,
         type: 'new_order'
       });

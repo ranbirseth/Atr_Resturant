@@ -104,6 +104,12 @@ export default function SessionOrderCard({ sessionData, onStatusUpdate, onViewBi
                 <span className="font-medium">Table {tableNumber}</span>
               </div>
             )}
+            {sessionData.isDelivery && (
+              <div className="flex items-center text-slate-600 max-w-[200px]" title={sessionData.deliveryAddress}>
+                <MapPin size={16} className="mr-1.5 text-orange-500" />
+                <span className="font-medium truncate">{sessionData.deliveryAddress}</span>
+              </div>
+            )}
             <div className="text-slate-500">
               {orders.length} order{orders.length > 1 ? 's' : ''} • {totalItems} item{totalItems > 1 ? 's' : ''}
             </div>

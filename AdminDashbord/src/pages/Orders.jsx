@@ -226,16 +226,15 @@ export default function Orders() {
                 
                 const { printOrder, confirmPrintSuccess } = await import('../services/printService');
                 
-                // We will print the session. 
-                // Ideally we should filter for unprinted items if it's a running order.
-                // Let's assume for this step we print the session.
-                // We construct a "Printable Order" object.
+
+                // Filter out cancelled orders before printing KOT
+                const nonCancelledOrders = sessionOrders.filter(o => o.status !== 'Cancelled' && o.status !== 'CANCELLED');
                 const printableOrder = {
-                    sessionId,
-                    orderType: sessionOrders[0].orderType,
-                    tableNumber: sessionOrders[0].tableNumber,
-                    items: sessionOrders.flatMap(o => o.items), // Flatten all items
-                    createdAt: new Date()
+                  sessionId,
+                  orderType: nonCancelledOrders[0]?.orderType || sessionOrders[0].orderType,
+                  tableNumber: nonCancelledOrders[0]?.tableNumber || sessionOrders[0].tableNumber,
+                  items: nonCancelledOrders.flatMap(o => o.items), // Only non-cancelled items
+                  createdAt: new Date()
                 };
 
                 console.log("🖨️ Triggering KOT Print...");

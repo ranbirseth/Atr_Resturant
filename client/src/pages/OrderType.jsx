@@ -160,7 +160,7 @@ const OrderType = () => {
                         </div>
                         <div>
                             <h3 className={`font-bold ${isDelivery ? 'text-primary' : 'text-textPrimary'}`}>Home Delivery</h3>
-                            <p className="text-xs text-textSecondary">Delivered to your doorstep</p>
+                            <p className="text-xs text-textSecondary">Address must be under 3 to 4 km to the resturant</p>
                         </div>
                     </div>
                     <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${isDelivery ? 'border-primary bg-primary' : 'border-textSecondary'}`}>
@@ -175,7 +175,7 @@ const OrderType = () => {
                         <textarea 
                             value={deliveryAddress}
                             onChange={(e) => setDeliveryAddress(e.target.value)}
-                            placeholder="Enter full address (e.g. Flat 101, Tasty Street)" 
+                            placeholder="Enter full address (e.g. Flat 101, Tasty Street) " 
                             rows={3}
                             className="w-full p-5 rounded-2xl bg-bgCard border border-borderColor/30 text-white focus:outline-none focus:border-primary/50 text-base placeholder-textSecondary resize-none"
                         />

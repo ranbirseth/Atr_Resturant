@@ -83,23 +83,6 @@ const Countdown = () => {
                     >
                         Cancel Order
                     </button>
-                    <button
-                        onClick={async () => {
-                            if (!currentOrderId) return;
-                            try {
-                                console.log('🟠 Requesting order change:', currentOrderId);
-                                const response = await axios.put(`${API_URL}/orders/${currentOrderId}/status`, { status: 'ChangeRequested' });
-                                console.log('✅ Change response:', response.data);
-                                navigate('/cart');
-                            } catch (err) {
-                                console.error('❌ Change error:', err);
-                                alert('Failed to request order change.');
-                            }
-                        }}
-                        className="bg-yellow-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-yellow-600 transition-all"
-                    >
-                        Change Order
-                    </button>
                     <div className="text-sm text-gray-500">This option will disappear in {actionTimeLeft} seconds.</div>
                     
                     <button

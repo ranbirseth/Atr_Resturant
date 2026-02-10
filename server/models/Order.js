@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
+    // Human-readable unique order ID (e.g., ORD-20260210-0001)
+    orderId: { type: String, unique: true, index: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     sessionId: { type: String, required: true, index: true },
     items: [
@@ -18,7 +20,22 @@ const orderSchema = new mongoose.Schema({
     discountAmount: { type: Number, default: 0 },
     orderType: { type: String, enum: ['Dine-in', 'Takeaway'], required: true },
     tableNumber: { type: String }, // Required if Dine-in
-    status: { type: String, enum: ['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed', 'Cancelled', 'ChangeRequested', 'Updated'], default: 'Pending' },
+
+    // New simplified status enum for order lifecycle
+    status: {
+        type: String,
+        enum: ['PLACED', 'ACCEPTED', 'CHANGED', 'CANCELLED', 'COMPLETED',
+            // Legacy statuses for backward compatibility during migration
+            'Pending', 'Accepted', 'Preparing', 'Ready', 'ChangeRequested', 'Updated'],
+        default: 'PLACED'
+    },
+
+    // Store previous order state when order is modified
+    previousOrderSnapshot: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null
+    },
+
     deliveryAddress: { type: String }, // For Home Delivery
     isDelivery: { type: Boolean, default: false }, // To distinguish Home Delivery from regular Takeaway
     feedbackStatus: {

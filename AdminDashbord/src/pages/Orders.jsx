@@ -24,7 +24,15 @@ import { getGroupedOrders, getOrders, updateOrderStatus } from '../services/orde
 import { useSocket } from '../context/SocketContext';
 
 const statusVariants = {
+  // New status system
+  'PLACED': 'blue',
+  'ACCEPTED': 'green',
+  'CHANGED': 'yellow',
+  'CANCELLED': 'red',
+  'COMPLETED': 'slate',
+  // Legacy statuses (backward compatibility)
   'Pending': 'amber',
+  'Accepted': 'purple',
   'Preparing': 'blue',
   'Ready': 'indigo',
   'Completed': 'green',
@@ -66,19 +74,27 @@ export default function Orders() {
       const grossTotal = orders.reduce((sum, o) => sum + (o.grossTotal || o.totalAmount), 0);
       const discountAmount = orders.reduce((sum, o) => sum + (o.discountAmount || 0), 0);
       
-      // Determine status (priority: ChangeRequested > Updated > Pending > Preparing > Ready > Completed, but skip Cancelled if there are active orders)
+      // Determine status (priority: CHANGED > PLACED > ACCEPTED > CANCELLED > COMPLETED)
       const statusPriority = {
-        'Cancelled': 6,
-        'ChangeRequested': 5,
-        'Updated': 4,
-        'Pending': 4,
-        'Accepted': 3.5,
-        'Preparing': 3,
+        'CHANGED': 6,
+        'ChangeRequested': 6,
+        'Updated': 6,
+        'PLACED': 5,
+        'Pending': 5,
+        'ACCEPTED': 4,
+        'Accepted': 4,
+        'Preparing': 3.5,
         'Ready': 2,
+        'CANCELLED': 3,
+        'Cancelled': 3,
+        'COMPLETED': 1,
         'Completed': 1
       };
-      // Filter out cancelled orders if there are any active orders
-      const activeOrders = orders.filter(o => o.status !== 'Cancelled');
+      // Filter out cancelled and completed orders if there are any active orders
+      const activeOrders = orders.filter(o => 
+        o.status !== 'Cancelled' && o.status !== 'CANCELLED' &&
+        o.status !== 'Completed' && o.status !== 'COMPLETED'
+      );
       const ordersToConsider = activeOrders.length > 0 ? activeOrders : orders;
 
       let worstStatus = 'Completed';
@@ -188,8 +204,8 @@ export default function Orders() {
         const sessionId = updatedOrders[0].sessionId;
         const sessionOrders = updatedOrders; // These are the fresh orders
 
-        // Print Logic for 'Accepted' status
-        if (newStatus === 'Accepted') {
+        // Print Logic for 'Accepted' or 'ACCEPTED' status
+        if (newStatus === 'Accepted' || newStatus === 'ACCEPTED') {
             try {
                 // Find the specific order(s) that are new/unprinted if needed, or print the whole session KOT
                 // For now, we print the whole session as a KOT or just the accepted order?
@@ -245,20 +261,28 @@ export default function Orders() {
 
         // Calculate the grouped status using priority logic
         const statusPriority = {
-          'Cancelled': 6,
-          'ChangeRequested': 5,
-          'Updated': 4,
-          'Pending': 4,
-          'Accepted': 3.5, // Added Accepted priority
-          'Preparing': 3,
+          'CHANGED': 6,
+          'ChangeRequested': 6,
+          'Updated': 6,
+          'PLACED': 5,
+          'Pending': 5,
+          'ACCEPTED': 4,
+          'Accepted': 4,
+          'Preparing': 3.5,
           'Ready': 2,
+          'CANCELLED': 3,
+          'Cancelled': 3,
+          'COMPLETED': 1,
           'Completed': 1
         };
-        // Filter out cancelled orders if there are any active orders
-        const activeOrders = updatedOrders.filter(o => o.status !== 'Cancelled');
+        // Filter out cancelled and completed orders if there are any active orders
+        const activeOrders = updatedOrders.filter(o => 
+          o.status !== 'Cancelled' && o.status !== 'CANCELLED' &&
+          o.status !== 'Completed' && o.status !== 'COMPLETED'
+        );
         const ordersToConsider = activeOrders.length > 0 ? activeOrders : updatedOrders;
 
-        let worstStatus = 'Completed';
+        let worstStatus = 'COMPLETED';
         ordersToConsider.forEach(order => {
           // Default to 0 if status not found
           const currentPriority = statusPriority[order.status] || 0;
@@ -327,9 +351,28 @@ export default function Orders() {
         doc.setFontSize(10);
     }
 
-    // Collect all items from all orders
+    // Filter orders to only include ACCEPTED and COMPLETED orders for billing
+    const billableOrders = sessionData.orders.filter(order => {
+      const status = order.status;
+      return status === 'ACCEPTED' || status === 'Accepted' || 
+             status === 'COMPLETED' || status === 'Completed' ||
+             status === 'Preparing' || status === 'Ready'; // Include workflow statuses
+    });
+
+    // If no billable orders, show error
+    if (billableOrders.length === 0) {
+      alert('No billable orders found. Only ACCEPTED and COMPLETED orders can be billed.');
+      return null;
+    }
+
+    // Recalculate totals based on billable orders only
+    const billTotalAmount = billableOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const billGrossTotal = billableOrders.reduce((sum, o) => sum + (o.grossTotal || o.totalAmount), 0);
+    const billDiscountAmount = billableOrders.reduce((sum, o) => sum + (o.discountAmount || 0), 0);
+
+    // Collect all items from billable orders only
     const allItems = [];
-    sessionData.orders.forEach(order => {
+    billableOrders.forEach(order => {
       order.items.forEach(item => {
         const existing = allItems.find(
           i => i.name === item.name && JSON.stringify(i.customizations) === JSON.stringify(item.customizations)
@@ -368,16 +411,16 @@ export default function Orders() {
 
     // Total Section
     doc.setFontSize(10);
-    doc.text(`Number of Orders: ${sessionData.orders.length}`, 14, finalY + 10);
+    doc.text(`Number of Billable Orders: ${billableOrders.length}`, 14, finalY + 10);
     
-    if (sessionData.discountAmount > 0) {
-      doc.text(`Subtotal: Rs. ${sessionData.grossTotal}`, 140, finalY + 10);
-      doc.text(`Discount: Rs. ${sessionData.discountAmount}`, 140, finalY + 16);
+    if (billDiscountAmount > 0) {
+      doc.text(`Subtotal: Rs. ${billGrossTotal}`, 140, finalY + 10);
+      doc.text(`Discount: Rs. ${billDiscountAmount}`, 140, finalY + 16);
     }
     
     doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
-    doc.text(`Total Amount: Rs. ${sessionData.totalAmount}`, 140, finalY + (sessionData.discountAmount > 0 ? 25 : 16));
+    doc.text(`Total Amount: Rs. ${billTotalAmount}`, 140, finalY + (billDiscountAmount > 0 ? 25 : 16));
 
     // Footer
     doc.setFont(undefined, 'normal');
@@ -450,7 +493,7 @@ export default function Orders() {
       <Card>
         <div className="p-4 border-b border-borderColor flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-2 overflow-x-auto">
-            {['All', 'Pending', 'Preparing', 'Ready', 'Completed', 'Cancelled', 'ChangeRequested', 'Updated'].map((s) => (
+            {['All', 'PLACED', 'ACCEPTED', 'CHANGED', 'CANCELLED', 'COMPLETED', 'Pending', 'Preparing', 'Ready', 'Cancelled'].map((s) => (
               <button
                 key={s}
                 onClick={() => setFilter(s)}
@@ -545,9 +588,20 @@ export default function Orders() {
               {selectedSession.orders.map((order, orderIdx) => (
                 <div key={order._id} className="border border-borderColor rounded-xl p-4 bg-bgCard/50">
                   <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-bold text-textSecondary">
-                      Order #{orderIdx + 1} • {new Date(order.createdAt).toLocaleTimeString()}
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-bold text-textSecondary">
+                        Order #{orderIdx + 1} • {new Date(order.createdAt).toLocaleTimeString()}
+                      </span>
+                      <Badge variant={statusVariants[order.status]} size="sm">
+                        {order.status === 'ChangeRequested' ? 'Change Requested' : 
+                         order.status === 'Updated' ? 'Updated' : 
+                         order.status === 'PLACED' ? 'Placed' :
+                         order.status === 'ACCEPTED' ? 'Accepted' :
+                         order.status === 'CANCELLED' ? 'Canceled' :
+                         order.status === 'COMPLETED' ? 'Completed' :
+                         order.status}
+                      </Badge>
+                    </div>
                     <span className="text-sm font-semibold text-textPrimary">₹{order.totalAmount}</span>
                   </div>
 

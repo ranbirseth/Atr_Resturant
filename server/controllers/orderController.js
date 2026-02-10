@@ -1,6 +1,8 @@
 const Order = require('../models/Order');
 const Item = require('../models/Item');
 const SessionManager = require('../utils/SessionManager');
+const { generateOrderId } = require('../utils/orderIdGenerator');
+
 
 // @desc    Create new order
 // @route   POST /api/orders
@@ -14,6 +16,9 @@ const createOrder = async (req, res) => {
     }
 
     try {
+        // Generate unique order ID
+        const orderId = await generateOrderId();
+
         // Generate session ID for this order
         const sessionId = SessionManager.getCurrentSessionId(userId);
 
@@ -31,6 +36,7 @@ const createOrder = async (req, res) => {
         }
 
         const order = new Order({
+            orderId,
             userId,
             sessionId,
             items,
@@ -40,7 +46,7 @@ const createOrder = async (req, res) => {
             discountAmount,
             orderType,
             tableNumber,
-            status: 'Pending',
+            status: 'PLACED', // New status system
             deliveryAddress: req.body.deliveryAddress,
             isDelivery: req.body.isDelivery || false,
             completionConfig: {
@@ -49,6 +55,12 @@ const createOrder = async (req, res) => {
         });
 
         const createdOrder = await order.save();
+
+        console.log('✅ Order created:', {
+            orderId: createdOrder.orderId,
+            sessionId: createdOrder.sessionId,
+            status: createdOrder.status
+        });
 
         // Emit real-time notification to admin/kitchen with grouped session data
         if (req.io) {
@@ -100,59 +112,114 @@ const getOrderById = async (req, res) => {
     }
 };
 
-// @desc    Update Order Status (Updates entire session)
+// @desc    Update Order Status (Individual order, not entire session)
 // @route   PUT /api/orders/:id/status
 const updateOrderStatus = async (req, res) => {
     const { status, feedbackStatus } = req.body;
     try {
-        // Get the order to find its sessionId
+        // Get the order to validate and update
         const order = await Order.findById(req.params.id);
         if (!order) {
             return res.status(404).json({ message: 'Order not found' });
         }
 
         console.log('🔄 Updating order status:', {
-            orderId: req.params.id,
+            orderId: order.orderId,
+            orderDbId: req.params.id,
             oldStatus: order.status,
             newStatus: status,
             sessionId: order.sessionId
         });
 
-        // Update all orders in the same session
+        // Status transition validation
+        if (status) {
+            const isValidTransition = validateStatusTransition(order.status, status);
+            if (!isValidTransition) {
+                return res.status(400).json({
+                    message: `Invalid status transition from ${order.status} to ${status}`,
+                    currentStatus: order.status,
+                    requestedStatus: status
+                });
+            }
+        }
+
+        // Update ONLY this specific order
         const updates = {};
         if (status) updates.status = status;
         if (feedbackStatus) updates.feedbackStatus = feedbackStatus;
 
-        await Order.updateMany(
-            { sessionId: order.sessionId },
+        await Order.updateOne(
+            { _id: req.params.id },
             { $set: updates }
         );
 
-        // Return updated session orders
-        const updatedOrders = await Order.find({ sessionId: order.sessionId })
+        // Fetch all orders in the session for UI update
+        const sessionOrders = await Order.find({ sessionId: order.sessionId })
             .populate('userId', 'name mobile')
             .sort({ createdAt: 1 });
 
-        console.log('✅ Order(s) updated:', {
-            sessionId: order.sessionId,
-            orderCount: updatedOrders.length,
-            statuses: updatedOrders.map(o => ({ id: o._id, status: o.status }))
+        console.log('✅ Order updated:', {
+            orderId: order.orderId,
+            newStatus: status,
+            sessionOrderCount: sessionOrders.length
         });
 
         // Emit socket event to notify admins of status change
         if (req.io) {
             req.io.emit('sessionOrderUpdate', {
                 sessionId: order.sessionId,
-                orders: updatedOrders
+                orders: sessionOrders
             });
         }
 
-        res.json(updatedOrders);
+        res.json(sessionOrders);
     } catch (error) {
         console.error('❌ Error updating order status:', error);
         res.status(500).json({ message: error.message });
     }
 };
+
+/**
+ * Validate status transitions according to order lifecycle rules
+ * @param {string} currentStatus - Current order status
+ * @param {string} newStatus - Requested new status
+ * @returns {boolean} - Whether transition is valid
+ */
+function validateStatusTransition(currentStatus, newStatus) {
+    const normalize = (s) => (s || '').toUpperCase();
+
+    // Map all legacy and variant statuses to a canonical uppercase format
+    const statusMap = {
+        'PENDING': 'PLACED',
+        'ACCEPTED': 'ACCEPTED',
+        'CHANGEREQUESTED': 'CHANGED',
+        'UPDATED': 'CHANGED',
+        'CANCELLED': 'CANCELLED',
+        'COMPLETED': 'COMPLETED',
+        'PREPARING': 'PREPARING',
+        'READY': 'READY'
+    };
+
+    const cur = normalize(currentStatus);
+    const nxt = normalize(newStatus);
+
+    const current = statusMap[cur] || cur;
+    const next = statusMap[nxt] || nxt;
+
+    // Define valid transitions using canonical formats
+    const validTransitions = {
+        'PLACED': ['ACCEPTED', 'CANCELLED'],
+        'ACCEPTED': ['COMPLETED', 'CANCELLED', 'PREPARING', 'READY'],
+        'CHANGED': ['ACCEPTED', 'CANCELLED'],
+        'CANCELLED': [],
+        'COMPLETED': [],
+        'PREPARING': ['READY', 'COMPLETED', 'CANCELLED'],
+        'READY': ['COMPLETED', 'CANCELLED']
+    };
+
+    const allowedTransitions = validTransitions[current] || [];
+    return allowedTransitions.includes(next);
+}
 
 // @desc    Get all orders
 // @route   GET /api/orders
@@ -228,13 +295,33 @@ const getGroupedOrders = async (req, res) => {
         });
 
         // Calculate final status for each grouped session (after all orders are added)
-        const statusPriority = { 'Cancelled': 6, 'ChangeRequested': 5, 'Updated': 4, 'Pending': 4, 'Preparing': 3, 'Ready': 2, 'Completed': 1 };
+        // Updated priority for new status system
+        const statusPriority = {
+            // New statuses
+            'CHANGED': 6,
+            'PLACED': 5,
+            'ACCEPTED': 4,
+            'CANCELLED': 3,
+            'COMPLETED': 1,
+            // Legacy statuses (for backward compatibility)
+            'ChangeRequested': 6,
+            'Updated': 6,
+            'Pending': 5,
+            'Accepted': 4,
+            'Preparing': 3.5,
+            'Ready': 2,
+            'Cancelled': 3
+        };
+
         Object.keys(grouped).forEach(sessionId => {
             // First, check if there are any non-cancelled/non-completed orders
-            const activeOrders = grouped[sessionId].orders.filter(o => o.status !== 'Cancelled');
+            const activeOrders = grouped[sessionId].orders.filter(o =>
+                o.status !== 'CANCELLED' && o.status !== 'Cancelled' &&
+                o.status !== 'COMPLETED' && o.status !== 'Completed'
+            );
             const ordersToConsider = activeOrders.length > 0 ? activeOrders : grouped[sessionId].orders;
 
-            let worstStatus = 'Completed';
+            let worstStatus = 'COMPLETED';
             ordersToConsider.forEach(order => {
                 const orderPriority = statusPriority[order.status] || 0;
                 const worstPriority = statusPriority[worstStatus] || 0;
@@ -461,4 +548,82 @@ const confirmPrintStatus = async (req, res) => {
     }
 };
 
-module.exports = { createOrder, getOrderById, updateOrderStatus, getOrders, getGroupedOrders, getAnalytics, confirmPrintStatus };
+// @desc    Update Order Items (Modify existing order)
+// @route   PUT /api/orders/:id/update
+// @access  Admin/User
+const updateOrder = async (req, res) => {
+    const { items, totalAmount, grossTotal, discountAmount, couponCode } = req.body;
+
+    try {
+        const order = await Order.findById(req.params.id).populate('userId', 'name mobile');
+
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        // Cannot modify cancelled or completed orders
+        if (order.status === 'CANCELLED' || order.status === 'COMPLETED') {
+            return res.status(400).json({
+                message: `Cannot modify ${order.status.toLowerCase()} order`,
+                orderId: order.orderId,
+                currentStatus: order.status
+            });
+        }
+
+        console.log('📝 Modifying order:', {
+            orderId: order.orderId,
+            currentStatus: order.status,
+            oldItemCount: order.items.length,
+            newItemCount: items?.length
+        });
+
+        // Save current order state to snapshot before modifying
+        order.previousOrderSnapshot = {
+            items: order.items,
+            totalAmount: order.totalAmount,
+            grossTotal: order.grossTotal,
+            discountAmount: order.discountAmount,
+            couponCode: order.couponCode,
+            modifiedAt: new Date(),
+            previousStatus: order.status
+        };
+
+        // Update order fields
+        if (items) order.items = items;
+        if (totalAmount !== undefined) order.totalAmount = totalAmount;
+        if (grossTotal !== undefined) order.grossTotal = grossTotal;
+        if (discountAmount !== undefined) order.discountAmount = discountAmount;
+        if (couponCode !== undefined) order.couponCode = couponCode;
+
+        // Set status to CHANGED (requires re-acceptance)
+        order.status = 'CHANGED';
+
+        await order.save();
+
+        console.log('✅ Order modified:', {
+            orderId: order.orderId,
+            newStatus: order.status,
+            hasSnapshot: !!order.previousOrderSnapshot
+        });
+
+        // Fetch all orders in session for UI update
+        const sessionOrders = await Order.find({ sessionId: order.sessionId })
+            .populate('userId', 'name mobile')
+            .sort({ createdAt: 1 });
+
+        // Emit socket event
+        if (req.io) {
+            req.io.emit('sessionOrderUpdate', {
+                sessionId: order.sessionId,
+                orders: sessionOrders
+            });
+        }
+
+        res.json(order);
+    } catch (error) {
+        console.error('❌ Error updating order:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { createOrder, getOrderById, updateOrderStatus, updateOrder, getOrders, getGroupedOrders, getAnalytics, confirmPrintStatus };

@@ -17,8 +17,8 @@ const { print } = require('pdf-to-printer');
 const { jsPDF } = require('jspdf');
 
 // Mock printer names - User needs to configure these in index.js or via env
-let KITCHEN_PRINTER = "Microsoft Print to PDF"; // Default for testing
-let ADMIN_PRINTER = "Microsoft Print to PDF";   // Default for testing
+let KITCHEN_PRINTER = "MF240 series"; // Default for testing
+let ADMIN_PRINTER = "MF240 series";   // Default for testing
 
 const setPrinters = (kitchen, admin) => {
     if (kitchen) KITCHEN_PRINTER = kitchen;

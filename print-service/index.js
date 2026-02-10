@@ -7,7 +7,7 @@ const { generateKOTPdf, printJob, setPrinters } = require('./printer');
 // const printer = require('pdf-to-printer'); 
 
 const app = express();
-const PORT = 6000;
+const PORT = 6001;
 
 app.use(cors());
 app.use(bodyParser.json());

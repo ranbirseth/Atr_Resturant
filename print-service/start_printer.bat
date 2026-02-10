@@ -16,7 +16,7 @@ IF %ERRORLEVEL% NEQ 0 (
 
 ECHO Starting Print Service...
 ECHO.
-ECHO [INFO] Service running on http://localhost:6000
+ECHO [INFO] Service running on http://localhost:6001
 ECHO [INFO] Minimizing this window is okay.
 ECHO [INFO] DO NOT CLOSE THIS WINDOW if you want printing to work.
 ECHO.

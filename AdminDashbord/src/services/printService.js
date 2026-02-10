@@ -2,7 +2,7 @@ import axios from 'axios';
 import API_URL from '../config';
 
 // Local Print Service URL
-const PRINT_SERVICE_URL = 'http://localhost:6000';
+const PRINT_SERVICE_URL = 'http://localhost:6001';
 
 /**
  * Sends a print job to the local print service

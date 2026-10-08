@@ -46,6 +46,12 @@ const OrderType = () => {
         return;
     }
 
+    if (!user?._id) {
+        alert("Your session has expired. Please sign in again to place your order.");
+        navigate('/login', { replace: true });
+        return;
+    }
+
     setLoading(true);
     // Construct Order Data
     const orderData = {

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, UserMinus, UserCheck, Mail, Phone, Calendar, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, UserMinus, UserCheck, Mail, Phone, Calendar, Loader2, RefreshCw } from 'lucide-react';
 import Card, { CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -9,29 +9,40 @@ import API_URL from '../config';
 export default function Users() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (silent) setRefreshing(true);
+      else setLoading(true);
       const response = await fetch(`${API_URL}/auth/all`);
       if (!response.ok) {
         throw new Error('Failed to fetch users');
       }
       const data = await response.json();
+      if (!Array.isArray(data)) {
+        throw new Error('Unexpected response shape');
+      }
       setUsers(data);
+      setError(null);
     } catch (err) {
       console.error('Error fetching users:', err);
-      setError('Failed to load users');
+      // A failed background poll must not wipe out an already-rendered table.
+      if (!silent) setError('Failed to load users');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchUsers();
+    // Poll so newly registered members appear without a manual reload.
+    const interval = setInterval(() => fetchUsers(true), 15000);
+    return () => clearInterval(interval);
+  }, [fetchUsers]);
 
   const filteredUsers = users.filter(user => 
     user.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -60,7 +71,7 @@ export default function Users() {
     return (
       <div className="text-center py-12 text-red-500 bg-red-50 rounded-xl my-6">
         <p>{error}</p>
-        <Button onClick={fetchUsers} variant="ghost" className="mt-2 text-red-700 hover:text-red-800">
+        <Button onClick={() => fetchUsers()} variant="ghost" className="mt-2 text-red-700 hover:text-red-800">
           Try Again
         </Button>
       </div>
@@ -86,8 +97,24 @@ export default function Users() {
               className="w-full pl-9 pr-4 py-2 bg-bgMain border border-borderColor rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-textPrimary placeholder-textDisabled"
             />
           </div>
-          <div className="text-sm text-textSecondary font-medium">
-            Total Users: <span className="text-textPrimary font-bold">{users.length}</span>
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-textSecondary font-medium">
+              Total Users: <span className="text-textPrimary font-bold">{users.length}</span>
+              {searchTerm && (
+                <span className="text-textMuted">
+                  {' '}(showing {filteredUsers.length})
+                </span>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => fetchUsers(true)}
+              disabled={refreshing}
+              title="Refresh users"
+            >
+              <RefreshCw size={16} className={`text-textSecondary ${refreshing ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </div>
 

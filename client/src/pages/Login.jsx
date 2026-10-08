@@ -1,5 +1,5 @@
 import React, { useState, useContext } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { AppContext } from "../context/AppContext";
 import { Coffee } from "lucide-react";
 
@@ -9,6 +9,9 @@ const Login = () => {
   const [error, setError] = useState("");
   const { login, checkUserExist, newUser, setNewUser } = useContext(AppContext);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const redirectTo = location.state?.from?.pathname || "/home";
 
   const handleMobileBlur = async () => {
     if (mobile.length === 10) {
@@ -24,8 +27,13 @@ const Login = () => {
       setError("Please enter your name and mobile number");
       return;
     }
+    if (!/^[6-9]\d{9}$/.test(mobile)) {
+      setError("Please enter a valid 10-digit mobile number");
+      return;
+    }
     const success = await login(name, mobile);
-    if (success) navigate("/home");
+    if (success) navigate(redirectTo, { replace: true });
+    else setError("Login failed. Please try again.");
   };
 
   return (

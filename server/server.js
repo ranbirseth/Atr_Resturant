@@ -117,8 +117,43 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 5000;
 
+// Find the PID currently holding a TCP port so the developer can kill it.
+const findPidOnPort = (port) => {
+    try {
+        const { execSync } = require('child_process');
+        const cmd = process.platform === 'win32'
+            ? `netstat -ano -p TCP | findstr LISTENING | findstr :${port}`
+            : `lsof -ti tcp:${port}`;
+        const out = execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        const line = out.split(/\r?\n/).map(l => l.trim()).filter(Boolean).pop();
+        if (!line) return null;
+        const pid = process.platform === 'win32' ? line.split(/\s+/).pop() : line;
+        return /^\d+$/.test(pid) ? pid : null;
+    } catch {
+        return null;
+    }
+};
+
 if (require.main === module) {
-    server.listen(PORT, console.log(`Server running on port ${PORT}`));
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            const pid = findPidOnPort(PORT);
+            console.error(`\n[ERROR] Port ${PORT} is already in use${pid ? ` by process (PID) ${pid}` : ''}.`);
+            console.error('Another instance of the server is already running.\n');
+            console.error('please stop the existing server or use a different port.\n');
+            if (process.platform === 'win32') {
+                console.error(`Run:  taskkill /PID ${pid || '<PID>'} /F`);
+            } else {
+                console.error(`Run:  kill -9 ${pid || '<PID>'}`);
+            }
+            console.error('Or just use the server that is already running.\n');
+        } else {
+            console.error('[ERROR] Server failed to start:', err.message);
+        }
+        process.exit(1);
+    });
+
+    server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
 module.exports = app;

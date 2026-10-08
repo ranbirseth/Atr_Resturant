@@ -9,7 +9,14 @@ export const AppProvider = ({ children }) => {
     const [menuItems, setMenuItems] = useState([]);
     const [categories, setCategories] = useState([]);
     const [selectedCategory, setSelectedCategory] = useState('All');
-    const [cart, setCart] = useState([]);
+    const [cart, setCart] = useState(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem('cart'));
+            return Array.isArray(saved) ? saved : [];
+        } catch {
+            return [];
+        }
+    });
     const [coupon, setCoupon] = useState(null); // { code, discountType, value, discountAmount }
     const [loading, setLoading] = useState(false);
     const [currentOrderId, setCurrentOrderId] = useState(localStorage.getItem('currentOrderId') || null);
@@ -29,8 +36,16 @@ export const AppProvider = ({ children }) => {
     }, []);
 
     useEffect(() => {
-        localStorage.setItem('user', JSON.stringify(user));
+        if (user?._id) {
+            localStorage.setItem('user', JSON.stringify(user));
+        } else {
+            localStorage.removeItem('user');
+        }
     }, [user]);
+
+    useEffect(() => {
+        localStorage.setItem('cart', JSON.stringify(cart));
+    }, [cart]);
 
     const fetchMenuItems = async () => {
         setLoading(true);

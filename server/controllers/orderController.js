@@ -1,54 +1,124 @@
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Item = require('../models/Item');
+const Category = require('../models/Category');
+const Coupon = require('../models/Coupon');
 const SessionManager = require('../utils/SessionManager');
 const { generateOrderId } = require('../utils/orderIdGenerator');
+const {
+    buildAuthoritativeOrder,
+    normalizeAudience,
+    categoryKey,
+    toFiniteNumber,
+} = require('../utils/menuUtils');
+const { computeCouponDiscount } = require('../utils/couponUtils');
 
 
 // @desc    Create new order
 // @route   POST /api/orders
 // @access  Public (User ID required)
 const createOrder = async (req, res) => {
-    const { userId, items, totalAmount, orderType, tableNumber, couponCode, discountAmount, grossTotal } = req.body;
-    console.log('📝 Creating Order Body:', JSON.stringify(req.body, null, 2));
+    const { userId, items, orderType, tableNumber, deliveryAddress, isDelivery } = req.body;
+    const audience = normalizeAudience(req.body.audience);
 
-    if (!items || items.length === 0) {
+    if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ message: 'No order items' });
     }
 
+    // Validate ids up front so an invalid ObjectId cannot blow up the DB query.
+    const hasInvalidId = items.some(
+        (line) => !line || !line.itemId || !mongoose.Types.ObjectId.isValid(String(line.itemId))
+    );
+    if (hasInvalidId) {
+        return res.status(400).json({ message: 'One or more order items have an invalid itemId' });
+    }
+
     try {
+        const itemIds = items.map((line) => String(line.itemId));
+        const dbItems = await Item.find({ _id: { $in: itemIds } });
+
+        // Staff orders honor staffVisible categories. Customer orders keep the
+        // existing checkout behavior (no category-visibility rejection).
+        let hiddenCategories = new Set();
+        if (audience === 'STAFF') {
+            const categories = await Category.find({}, 'name staffVisible');
+            hiddenCategories = new Set(
+                categories
+                    .filter((category) => category.staffVisible === false)
+                    .map((category) => categoryKey(category.name))
+            );
+        }
+
+        // Server-authoritative line items + subtotal. Client-supplied price,
+        // totalAmount, grossTotal and discountAmount are intentionally ignored.
+        const built = buildAuthoritativeOrder({
+            requestedItems: items,
+            dbItems,
+            audience,
+            hiddenCategories,
+        });
+
+        if (!built.ok) {
+            return res.status(built.status || 400).json({ message: built.message, errors: built.errors });
+        }
+
+        // Recalculate the coupon against the server-computed subtotal.
+        let discountAmount = 0;
+        let couponCode;
+        if (req.body.couponCode) {
+            const code = String(req.body.couponCode).trim().toUpperCase();
+            const coupon = await Coupon.findOne({ code, isActive: true });
+            if (!coupon) {
+                return res.status(400).json({ message: 'Invalid or expired coupon code' });
+            }
+            const couponResult = computeCouponDiscount(coupon, built.subtotal);
+            if (!couponResult.ok) {
+                if (couponResult.reason === 'BELOW_MINIMUM') {
+                    return res.status(400).json({
+                        message: `Minimum order amount of ₹${couponResult.minOrderAmount} required for this coupon`
+                    });
+                }
+                return res.status(400).json({ message: 'Invalid or expired coupon code' });
+            }
+            discountAmount = couponResult.discountAmount;
+            couponCode = coupon.code;
+        }
+
+        const grossTotal = built.subtotal;
+        const totalAmount = grossTotal - discountAmount > 0 ? grossTotal - discountAmount : 0;
+
         // Generate unique order ID
         const orderId = await generateOrderId();
 
         // Generate session ID for this order
         const sessionId = SessionManager.getCurrentSessionId(userId);
 
-        // Calculate total preparation time (Max of all items)
+        // Longest preparation time across the ordered items (uses the real
+        // `estimatedPreparationTime` field; the previous code read a
+        // non-existent `item.preparationTime` and always fell back to 15).
         let maxPrepTime = 15; // default
-
-        if (items && items.length > 0) {
-            const itemIds = items.map(i => i.itemId);
-            const dbItems = await Item.find({ _id: { $in: itemIds } });
-
-            if (dbItems.length > 0) {
-                const prepTimes = dbItems.map(item => item.preparationTime || 15);
-                maxPrepTime = Math.max(...prepTimes);
-            }
+        const prepTimes = dbItems
+            .map((item) => toFiniteNumber(item.estimatedPreparationTime))
+            .filter((value) => value !== null && value > 0);
+        if (prepTimes.length > 0) {
+            maxPrepTime = Math.max(...prepTimes);
         }
 
         const order = new Order({
             orderId,
             userId,
             sessionId,
-            items,
+            items: built.lines,
             totalAmount,
             grossTotal,
             couponCode,
             discountAmount,
             orderType,
             tableNumber,
+            audience,
             status: 'PLACED', // New status system
-            deliveryAddress: req.body.deliveryAddress,
-            isDelivery: req.body.isDelivery || false,
+            deliveryAddress,
+            isDelivery: isDelivery || false,
             completionConfig: {
                 countDownSeconds: maxPrepTime * 60
             }
@@ -59,6 +129,7 @@ const createOrder = async (req, res) => {
         console.log('✅ Order created:', {
             orderId: createdOrder.orderId,
             sessionId: createdOrder.sessionId,
+            audience: createdOrder.audience,
             status: createdOrder.status
         });
 
@@ -81,10 +152,10 @@ const createOrder = async (req, res) => {
                 sessionId: sessionId,
                 tableNumber: tableNumber,
                 orderType: orderType,
-                isDelivery: req.body.isDelivery,
-                deliveryAddress: req.body.deliveryAddress,
+                isDelivery: isDelivery,
+                deliveryAddress: deliveryAddress,
                 totalAmount: totalAmount,
-                itemsCount: items.length,
+                itemsCount: built.lines.length,
                 customerName: userId?.name || 'Guest'
             });
         }

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Coupon = require('../models/Coupon');
+const { computeCouponDiscount } = require('../utils/couponUtils');
 
 // @desc    Get all coupons (including inactive) - For Admin Dashboard
 // @route   GET /api/coupons/all
@@ -149,22 +150,15 @@ const validateCoupon = async (req, res) => {
             return res.status(404).json({ message: 'Invalid or expired coupon code' });
         }
 
-        if (cartTotal < coupon.minOrderAmount) {
-            return res.status(400).json({
-                message: `Minimum order amount of ₹${coupon.minOrderAmount} required for this coupon`
-            });
-        }
+        const result = computeCouponDiscount(coupon, cartTotal);
 
-        let discountAmount = 0;
-        if (coupon.discountType === 'PERCENT') {
-            discountAmount = (cartTotal * coupon.value) / 100;
-        } else if (coupon.discountType === 'FLAT') {
-            discountAmount = coupon.value;
-        }
-
-        // Ensure discount doesn't exceed cart total
-        if (discountAmount > cartTotal) {
-            discountAmount = cartTotal;
+        if (!result.ok) {
+            if (result.reason === 'BELOW_MINIMUM') {
+                return res.status(400).json({
+                    message: `Minimum order amount of ₹${result.minOrderAmount} required for this coupon`
+                });
+            }
+            return res.status(400).json({ message: 'Invalid or expired coupon code' });
         }
 
         res.json({
@@ -172,7 +166,7 @@ const validateCoupon = async (req, res) => {
             code: coupon.code,
             discountType: coupon.discountType,
             value: coupon.value,
-            discountAmount,
+            discountAmount: result.discountAmount,
             message: 'Coupon applied successfully!'
         });
 

@@ -21,6 +21,14 @@ const orderSchema = new mongoose.Schema({
     orderType: { type: String, enum: ['Dine-in', 'Takeaway'], required: true },
     tableNumber: { type: String }, // Required if Dine-in
 
+    // Which menu/pricing the order was placed against. Legacy documents have
+    // no value and are treated as CUSTOMER.
+    audience: {
+        type: String,
+        enum: ['CUSTOMER', 'STAFF'],
+        default: 'CUSTOMER'
+    },
+
     // New simplified status enum for order lifecycle
     status: {
         type: String,

@@ -98,6 +98,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/coupons', require('./routes/couponRoutes'));
 app.use('/api/feedback', require('./routes/feedbackRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
+app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/admin', adminAuthRoutes);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

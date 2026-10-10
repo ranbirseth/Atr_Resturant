@@ -17,7 +17,7 @@ const STOCK_FILTERS = ['all', 'available', 'low', 'out', 'need-to-buy'];
 
 // A cycle raises a usage alert once this percent of its baseline has been used
 // (i.e. <= 25% of the baseline remains).
-const USAGE_ALERT_THRESHOLD = 75;
+const USAGE_ALERT_THRESHOLD = 70;
 
 const INGREDIENT_WRITABLE_FIELDS = [
     'name',

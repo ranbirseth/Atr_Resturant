@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -9,18 +9,16 @@ import {
   View,
 } from 'react-native';
 import { COLORS, RADIUS, SPACING } from '../../theme';
-import { parseDateInput, todayISO, validateMovementForm } from '../../utils/inventoryUtils';
+import {
+  computeUnitCost,
+  formatQty,
+  toNonNegativeNumber,
+  validateMovementForm,
+} from '../../utils/inventoryUtils';
 
 const TITLES = {
-  CONSUMPTION: 'Record Consumption',
-  RESTOCK: 'Restock Item',
-  ADJUSTMENT: 'Adjust Stock',
-};
-
-const HINTS = {
-  CONSUMPTION: 'Quantity used (cannot exceed what is available).',
-  RESTOCK: 'Quantity added. This starts a new usage cycle.',
-  ADJUSTMENT: 'Correction amount. Use a minus sign to reduce the balance.',
+  CONSUMPTION: 'Consume',
+  RESTOCK: 'Restock',
 };
 
 function Field({ label, value, onChangeText, error, ...rest }) {
@@ -39,32 +37,49 @@ function Field({ label, value, onChangeText, error, ...rest }) {
   );
 }
 
+// Two simple operations only: Consume (quantity + optional note) and Restock
+// (quantity + total purchase price, with the per-unit cost derived on submit).
 export default function MovementModal({ item, mode, saving, serverError, onClose, onSubmit }) {
   const [quantity, setQuantity] = useState('');
-  const [quantityDelta, setQuantityDelta] = useState('');
-  const [date, setDate] = useState(todayISO());
+  const [totalPrice, setTotalPrice] = useState('');
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState({});
 
+  // One idempotency key per modal open so a duplicated tap can never record a
+  // second movement; the backend dedupes against this key.
+  const idempotencyKeyRef = useRef(null);
+
+  function idempotencyKey() {
+    if (idempotencyKeyRef.current === null) {
+      idempotencyKeyRef.current = `${item._id}-${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+    return idempotencyKeyRef.current;
+  }
+
   function handleSave() {
-    const form = mode === 'ADJUSTMENT' ? { quantityDelta, date } : { quantity, date };
+    if (saving) {
+      return;
+    }
+    const form = mode === 'RESTOCK' ? { quantity, unitCost: totalPrice } : { quantity, note };
     const result = validateMovementForm(form, mode);
-    setErrors(result.errors);
-    if (!result.valid) {
+    const nextErrors = { ...result.errors };
+    if (mode === 'RESTOCK' && toNonNegativeNumber(totalPrice) === null) {
+      nextErrors.unitCost = 'Enter 0 or more';
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
       return;
     }
 
     const payload = {
       ingredientId: item._id,
       type: mode,
-      movementDate: parseDateInput(date).toISOString(),
+      quantity: Number(quantity),
       note: note.trim(),
-      idempotencyKey: `${item._id}-${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      idempotencyKey: idempotencyKey(),
     };
-    if (mode === 'ADJUSTMENT') {
-      payload.quantityDelta = Number(quantityDelta);
-    } else {
-      payload.quantity = Number(quantity);
+    if (mode === 'RESTOCK') {
+      payload.unitCost = computeUnitCost(totalPrice, quantity);
     }
     onSubmit(payload);
   }
@@ -73,49 +88,49 @@ export default function MovementModal({ item, mode, saving, serverError, onClose
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
-          <Text style={styles.title}>{TITLES[mode] || 'Stock Movement'}</Text>
+          <Text style={styles.title}>{TITLES[mode] || 'Stock'}</Text>
           <Text style={styles.subtitle}>
-            {item.name} · available {item.currentQty} {item.unit}
+            {item.name} · available {formatQty(item.currentQty, item.unit)}
           </Text>
 
           <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
-            {mode === 'ADJUSTMENT' ? (
+            <Field
+              label={mode === 'RESTOCK' ? `Quantity Purchased (${item.unit})` : `Quantity to Consume (${item.unit})`}
+              value={quantity}
+              onChangeText={setQuantity}
+              error={errors.quantity}
+              keyboardType="decimal-pad"
+              placeholder="0"
+            />
+
+            {mode === 'RESTOCK' ? (
               <Field
-                label="Adjustment Quantity (+/-)"
-                value={quantityDelta}
-                onChangeText={setQuantityDelta}
-                error={errors.quantityDelta}
-                keyboardType="numbers-and-punctuation"
-                placeholder="e.g. -2 or 3"
+                label="Total Purchase Price"
+                value={totalPrice}
+                onChangeText={setTotalPrice}
+                error={errors.unitCost}
+                keyboardType="decimal-pad"
+                placeholder="e.g. 600"
               />
             ) : (
               <Field
-                label={`Quantity (${item.unit})`}
-                value={quantity}
-                onChangeText={setQuantity}
-                error={errors.quantity}
-                keyboardType="numeric"
-                placeholder="0"
+                label="Note (optional)"
+                value={note}
+                onChangeText={setNote}
+                placeholder="Reason, e.g. lunch service"
+                multiline
               />
             )}
-            <Text style={styles.hint}>{HINTS[mode]}</Text>
 
-            <Field
-              label="Date (YYYY-MM-DD)"
-              value={date}
-              onChangeText={setDate}
-              error={errors.date}
-              autoCapitalize="none"
-              placeholder={todayISO()}
-            />
+            {mode === 'RESTOCK' && computeUnitCost(totalPrice, quantity) !== null ? (
+              <Text style={styles.preview}>
+                Per-unit cost: {formatQty(computeUnitCost(totalPrice, quantity), '')} / {item.unit}
+              </Text>
+            ) : null}
 
-            <Field
-              label="Note (optional)"
-              value={note}
-              onChangeText={setNote}
-              placeholder="Optional note"
-              multiline
-            />
+            {mode === 'CONSUMPTION' ? (
+              <Text style={styles.hint}>Cannot exceed the available quantity.</Text>
+            ) : null}
 
             {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
           </ScrollView>
@@ -128,7 +143,9 @@ export default function MovementModal({ item, mode, saving, serverError, onClose
               style={[styles.button, styles.save, saving && styles.disabled]}
               onPress={handleSave}
               disabled={saving}>
-              <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save'}</Text>
+              <Text style={styles.saveText}>
+                {saving ? 'Saving…' : mode === 'RESTOCK' ? 'Confirm Restock' : 'Confirm Consume'}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -149,7 +166,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     maxHeight: '92%',
     width: '100%',
-    maxWidth: 640,
+    maxWidth: 560,
     alignSelf: 'center',
     overflow: 'hidden',
   },
@@ -170,7 +187,8 @@ const styles = StyleSheet.create({
   },
   inputError: { borderColor: COLORS.danger },
   fieldError: { marginTop: SPACING.xs, color: COLORS.danger, fontSize: 12, fontWeight: '600' },
-  hint: { fontSize: 12, color: COLORS.muted, marginTop: -SPACING.xs, marginBottom: SPACING.md },
+  preview: { fontSize: 13, fontWeight: '700', color: COLORS.revenue },
+  hint: { fontSize: 12, color: COLORS.muted },
   serverError: { marginTop: SPACING.md, color: COLORS.danger, fontSize: 13, fontWeight: '600' },
   footer: {
     flexDirection: 'row',

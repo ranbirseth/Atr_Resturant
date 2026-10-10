@@ -210,6 +210,51 @@ const setIngredientActive = async (req, res) => {
     }
 };
 
+// @desc    Delete an inventory item safely
+// @route   DELETE /api/inventory/ingredients/:id
+// SAFETY: items with any ledger history are NEVER hard-deleted (that would
+// orphan the append-only StockMovement ledger and the StockCycle records).
+// They are archived instead (isActive=false, the same soft mechanism the
+// activate/deactivate routes use) so balances and movement history remain
+// intact, and a clear result tells the UI why. Only items with NO movements
+// and NO cycles are actually removed from the database.
+const deleteIngredient = async (req, res) => {
+    try {
+        const ingredient = await Ingredient.findById(req.params.id);
+        if (!ingredient) {
+            return res.status(404).json({ message: 'Inventory item not found' });
+        }
+
+        const [movementCount, cycleCount] = await Promise.all([
+            StockMovement.countDocuments({ ingredientId: ingredient._id }),
+            StockCycle.countDocuments({ ingredientId: ingredient._id }),
+        ]);
+
+        if (movementCount > 0 || cycleCount > 0) {
+            const archived = await Ingredient.findByIdAndUpdate(
+                ingredient._id,
+                { $set: { isActive: false } },
+                { new: true },
+            );
+            const openCycle = await StockCycle.findOne({ ingredientId: ingredient._id, status: 'OPEN' });
+            return res.json({
+                archived: true,
+                message: `"${ingredient.name}" has stock history (${movementCount} movement(s), ${cycleCount} cycle(s)), so it was archived instead of deleted to preserve those records.`,
+                ingredient: stockRow(archived, openCycle),
+            });
+        }
+
+        await StockCycle.deleteMany({ ingredientId: ingredient._id });
+        await Ingredient.findByIdAndDelete(ingredient._id);
+        res.json({
+            deleted: true,
+            message: `"${ingredient.name}" deleted.`,
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 // @desc    Set explicit purchase state (NONE / NEEDED / ORDERED)
 // @route   POST /api/inventory/ingredients/:id/purchase-status
 // NOTE: COMPLETED is only set by recording an actual RESTOCK movement.
@@ -666,7 +711,7 @@ const getAnalytics = async (req, res) => {
     }
 };
 
-// @desc    Items needing attention: 75%-used cycle, low/out of stock, or
+// @desc    Items needing attention: 70%-used cycle, low/out of stock, or
 //          flagged for purchase. Reuses stockRow so no derived math is repeated.
 // @route   GET /api/inventory/alerts
 const getAlerts = async (req, res) => {
@@ -688,6 +733,7 @@ module.exports = {
     createIngredient,
     updateIngredient,
     setIngredientActive,
+    deleteIngredient,
     setPurchaseStatus,
     getStock,
     recordMovement,

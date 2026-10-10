@@ -24,8 +24,109 @@ See [Phase 1B report](../audits/README.md). Overall: `IMPLEMENTED — BACKEND CO
 ### Remaining (deferred)
 | # | Item | Notes |
 |---|---|---|
-| B8 | Expo UI: consolidate Inventory+Stock into one `Inventory & Stock` destination; add price/note inputs; consume `usageAlert` | UI phase, not started |
-| B9 | Verify Render production deployment includes inventory routes | `config.js` targets `https://atr-resturant.onrender.com/api` — UNVERIFIED |
+| B8 | Expo UI: consolidate Inventory+Stock into one `Inventory & Stock` destination; add price/note inputs; consume `usageAlert` | ✅ Completed in Phase 1C below |
+| B9 | Verify Render production deployment includes inventory routes | ✅ Verified in Phase 1C: `units`/`alerts`/`analytics` → 200 |
+
+---
+
+## Final Polish — Phase 1C: Expo Inventory & Stock integration
+
+See [Phase 1C report](../audits/README.md). Overall: `IMPLEMENTED — EXPO UI COMPLETE, AWAITING OWNER/PRODUCTION REVIEW`. UI targets the live admin base URL `https://atr-resturant.onrender.com/api`; production endpoints verified reachable with Phase 1B fields.
+
+### Completed
+| # | Item | Evidence |
+|---|---|---|
+| C1 | InventoryService exposes `getAnalytics` + `getAlerts` | `gola-expo-preview/src/api/inventoryService.js` |
+| C2 | Pure helpers: `formatPrice`, `formatPercent`, price-field validation (purchasePrice/openingUnitCost/unitCost) | `src/utils/inventoryUtils.js` (+103 utils tests pass) |
+| C3 | Item form supports `purchasePrice`, `openingUnitCost`, `openingNote` on create; price on edit; item list shows purchase price + 75%-used alert | `src/screens/Inventory/IngredientFormModal.js`, `InventoryScreen.js` |
+| C4 | Movement modal: `unitCost` for RESTOCK, one idempotency key per modal open, `saving` guard | `src/screens/Stock/MovementModal.js` |
+| C5 | Stock list shows distinct `75% Used` (cycle) vs `Low Stock` (min level) badges + `remainingPercent` | `src/screens/Stock/StockScreen.js` |
+| C6 | History modal shows per-unit cost on movements; app-wide Movements section | `src/screens/Stock/HistoryModal.js`, `src/screens/InventoryStock/HistorySection.js` |
+| C7 | Alerts & Suggestions section from live `/alerts` + `/analytics` (75% vs min-stock kept separate, no client re-derived threshold) | `src/screens/InventoryStock/AlertsSection.js` |
+| C8 | One `Inventory & Stock` drawer destination with four in-screen sections; other destinations untouched | `src/screens/InventoryStock/InventoryStockScreen.js`, `src/navigation/RootNavigator.js` |
+| C9 | Verify: `node --test src/utils/*.test.js` → 103 pass; `npx expo lint` → 0 errors; `npx expo export --platform android` → bundle built | commands above |
+
+### In progress
+| # | Item | Notes |
+|---|---|---|
+| 1 | Physical tablet visual check of combined screen + sections | Requires physical tablet/Expo Go; not available in this environment |
+| 2 | `expo-doctor` (dependency/diagnostic sweep) | Recommended on a workstation with device tooling |
+| 3 | `npx tsc --noEmit` | No `tsconfig.json` in this project; typecheck unavailable unless one is added |
+
+### Remaining (out of scope for this version)
+| # | Item | Notes |
+|---|---|---|
+| 1 | OEM review of backend write endpoints found during Phase 1C | No backend defects found in this phase; none deferred for review |
+| 2 | Supplier / purchase-invoice / recipe-BOM / wastage modules | Phase 9C, explicitly deferred |
+| 3 | Auto stock deduction from restaurant orders | Explicitly not wanted in this version |
+| 4 | Cross-unit conversion (kg↔g) | Deliberately not implemented — units never silently mixed |
+| 5 | Auth / hardening for inventory write APIs | Owner explicitly requested **no login**. Open-write risk documented in `inventory-stock-implementation.md` §7 |
+| 6 | Credential rotation (`ADMIN_SECRET_CODE`, `server/test.js`) | Owner/ops action, documented in earlier audits |
+
+---
+
+## Final Polish — Phase 1D: Simplify Inventory & Stock UI
+
+See [Phase 1D report](../audits/README.md) (§D.0–D.1). Overall: `IMPLEMENTED — SIMPLIFIED UI COMPLETE, AWAITING OWNER/PRODUCTION REVIEW`. Backend untouched; no capabilities removed.
+
+### Completed
+| # | Item | Evidence |
+|---|---|---|
+| D1 | One `Inventory & Stock` drawer destination, reduced to **2** sections (Inventory, Current Stock) | `src/screens/InventoryStock/InventoryStockScreen.js`, `src/navigation/RootNavigator.js` |
+| D2 | Inventory = simple list + `Add Inventory` with exactly 4 fields (name, unit, total quantity, total price) | `src/screens/Inventory/InventoryScreen.js`, `AddItemModal.js` |
+| D3 | Mapping: name→`name`, unit→`unit`, qty→`openingQty`, totalPrice/qty→`openingUnitCost`, hidden `minimumStockLevel:0`; `purchasePrice` never set from total | `AddItemModal.js` |
+| D4 | Current Stock = simple cards (name, available, used-this-batch) + `Consume` + `Restock` only | `src/screens/Stock/StockScreen.js` |
+| D5 | Consume popup (quantity + optional note); Restock popup (quantity + total price → auto unit cost) | `src/screens/Stock/MovementModal.js` |
+| D6 | Balance always from backend; refresh after success; `INSUFFICIENT_STOCK` shown, no false success | `StockScreen.js` re-fetch on success |
+| D7 | Pure helpers + tests: `computeUnitCost`, `computeConsumedQuantity`, `validateAddItemForm` | `src/utils/inventoryUtils.js` + test (106 total pass) |
+| D8 | Removed dead UI: IngredientFormModal, HistoryModal, HistorySection, AlertsSection | files deleted |
+| D9 | Verify: 106/106 unit tests, `npx expo lint` 0 errors, `npx expo export --platform android` built | commands above |
+
+### In progress
+| # | Item | Notes |
+|---|---|---|
+| 1 | Owner smoke test of 10 L → consume 3 → restock 4 = 11 L on live deployment | Not performed here |
+| 2 | Physical tablet visual check | No device in this environment |
+| 3 | `expo-doctor` + `npx tsc --noEmit` | Not run (no device tooling; no tsconfig) |
+
+### Remaining (deferred)
+| # | Item | Notes |
+|---|---|---|
+| 1 | Persistent "total purchase amount" | Backend has no such field; documented limitation, backend not modified |
+| 2 | Unused client helpers (`filterStockList`, `computeSuggestedQty`, `computeUsagePercent`, `validateIngredientForm`, `purchaseStatusLabel`, `STOCK_FILTERS`, `PURCHASE_STATUSES`) | Kept (tested; backend still returns those fields) — candidate prune if minimal UI stays permanent |
+| 3 | Supplier / purchase-invoice / recipe-BOM / wastage modules | Phase 9C, explicitly deferred |
+| 4 | Auto stock deduction from orders | Explicitly not wanted |
+| 5 | Auth / hardening for inventory write APIs | Owner explicitly requested **no login** |
+
+---
+
+## Final Polish — Phase 1E (2026-10-10): Fix Add Inventory, 70% Usage Alert, Safe Delete
+
+See [Phase 1E report](../audits/README.md) (§E.0–E.1). Overall: `IMPLEMENTED — ALL THREE BUGS FIXED, AWAITING OWNER/PRODUCTION REVIEW`.
+
+### Completed
+| # | Item | Evidence |
+|---|---|---|
+| E1 | **Add Inventory creation fixed** — missing required `minimumStockLevel` caused a 400 on every create. Four visible fields unchanged; hidden `minimumStockLevel: 0` now sent on create | `gola-expo-preview/src/screens/Inventory/AddItemModal.js` |
+| E2 | **Usage alert threshold = single backend constant, 75% → 70%** (`USAGE_ALERT_THRESHOLD`); no client-side threshold exists | `server/utils/inventoryUtils.js` |
+| E3 | 70% boundary verified: 69% no alert / exactly 70% alert / 80% alert / restock clears alert (cycle reset is the source of truth) | `server/utils/inventoryUtils.test.js`, `server/tests/inventory.api.test.js` |
+| E4 | Current Stock cards surface backend `usageAlert` + `usagePercent` (minimal inline warning, no new section, no duplicated threshold) | `gola-expo-preview/src/screens/Stock/StockScreen.js` |
+| E5 | **Safe delete API** `DELETE /api/inventory/ingredients/:id` — hard-delete only when no movements/cycles; otherwise archive (`isActive=false`, preserves ledger/cycles) with a clear message | `server/controllers/inventoryController.js`, `server/routes/inventoryRoutes.js` |
+| E6 | Expo delete UX: per-card Delete + confirmation, archived/deleted feedback, error alert, list refresh, "Archived" badge on inactive items | `gola-expo-preview/src/screens/Inventory/InventoryScreen.js`, `src/api/inventoryService.js` |
+| E7 | Verify: `server npm test` → **62/62** (added DELETE archive / hard-delete / 404); Expo utils **106/106**; `npx expo lint` → **0 errors**; `npx expo export --platform android` → bundle built | verified 2026-10-10 |
+
+### In progress
+| # | Item | Notes |
+|---|---|---|
+| 1 | Owner smoke test on live deployment | Add item → consume 7/10 L (70% alert appears) → restock clears it; delete item with history → archived, not deleted |
+| 2 | Physical tablet check | No device in this environment |
+
+### Remaining (deferred)
+| # | Item | Notes |
+|---|---|---|
+| 1 | Persistent "total purchase amount" | Backend has no such field; documented limitation |
+| 2 | Auth / hardening for inventory write APIs | Owner explicitly requested **no login** |
+| 3 | Supplier / purchase-invoice / recipe-BOM / wastage modules | Phase 9C, deferred |
 
 ---
 

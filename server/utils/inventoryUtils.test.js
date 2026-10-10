@@ -53,12 +53,13 @@ test('computeRemainingPercent is the complement of usage and null-safe', () => {
     assert.equal(computeRemainingPercent(10, 2) + computeUsagePercent(10, 2), 100);
 });
 
-test('isUsageAlert fires at >=75% used and never without a baseline', () => {
-    assert.equal(USAGE_ALERT_THRESHOLD, 75);
-    assert.equal(isUsageAlert(10, 2), true);
-    assert.equal(isUsageAlert(10, 2.5), true);
-    assert.equal(isUsageAlert(10, 3), false);
-    assert.equal(isUsageAlert(10, 8), false);
+test('isUsageAlert fires at >=70% used, never without a baseline', () => {
+    assert.equal(USAGE_ALERT_THRESHOLD, 70);
+    assert.equal(isUsageAlert(10, 3.1), false); // 69% used -> no alert
+    assert.equal(isUsageAlert(10, 3), true); // exactly 70% used -> alert
+    assert.equal(isUsageAlert(10, 2), true); // 80% used -> alert
+    assert.equal(isUsageAlert(10, 2.5), true); // 75% used -> alert
+    assert.equal(isUsageAlert(10, 8), false); // 20% used -> no alert
     assert.equal(isUsageAlert(0, 0), false);
     assert.equal(isUsageAlert(null, 0), false);
     assert.equal(isUsageAlert(10, 2, 50), true);

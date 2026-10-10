@@ -49,6 +49,23 @@ function formatQty(value, unit) {
   return unit ? `${text} ${unit}` : text;
 }
 
+// Rupee price, mirroring the menu convention; em dash for missing/legacy nulls.
+function formatPrice(value) {
+  const parsed = toFiniteNumber(value);
+  if (parsed === null) {
+    return '\u2014';
+  }
+  return `\u20B9${Math.round(parsed * 100) / 100}`;
+}
+
+function formatPercent(value) {
+  const parsed = toFiniteNumber(value);
+  if (parsed === null) {
+    return '\u2014';
+  }
+  return `${Math.round(parsed * 100) / 100}%`;
+}
+
 function todayISO() {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -91,6 +108,37 @@ function validateIngredientForm(form) {
       errors.openingQty = 'Enter 0 or more';
     }
   }
+  if (values.purchasePrice !== undefined && values.purchasePrice !== null && String(values.purchasePrice).trim() !== '') {
+    if (toNonNegativeNumber(values.purchasePrice) === null) {
+      errors.purchasePrice = 'Enter 0 or more';
+    }
+  }
+  if (values.openingUnitCost !== undefined && values.openingUnitCost !== null && String(values.openingUnitCost).trim() !== '') {
+    if (toNonNegativeNumber(values.openingUnitCost) === null) {
+      errors.openingUnitCost = 'Enter 0 or more';
+    }
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors };
+}
+
+// Simplified "Add Inventory" form: name, unit, total quantity, total price.
+function validateAddItemForm(form) {
+  const values = form || {};
+  const errors = {};
+
+  if (!String(values.name || '').trim()) {
+    errors.name = 'Name is required';
+  }
+  if (!UNITS.includes(String(values.unit || '').trim())) {
+    errors.unit = 'Select a unit';
+  }
+  if (toPositiveNumber(values.quantity) === null) {
+    errors.quantity = 'Enter a quantity greater than 0';
+  }
+  if (toNonNegativeNumber(values.totalPrice) === null) {
+    errors.totalPrice = 'Enter 0 or more';
+  }
 
   return { valid: Object.keys(errors).length === 0, errors };
 }
@@ -107,6 +155,12 @@ function validateMovementForm(form, mode) {
     }
   } else if (toPositiveNumber(values.quantity) === null) {
     errors.quantity = 'Enter a quantity greater than 0';
+  }
+
+  if (values.unitCost !== undefined && values.unitCost !== null && String(values.unitCost).trim() !== '') {
+    if (toNonNegativeNumber(values.unitCost) === null) {
+      errors.unitCost = 'Enter 0 or more';
+    }
   }
 
   if (parseDateInput(values.date) === null) {
@@ -132,6 +186,29 @@ function computeSuggestedQty(minimumStockLevel, expectedDemand, currentQty) {
   const demand = toNonNegativeNumber(expectedDemand) || 0;
   const current = toFiniteNumber(currentQty) || 0;
   return Math.round(Math.max(0, min + demand - current) * 100) / 100;
+}
+
+// Per-unit cost = total purchase price / quantity. Returns null when quantity is
+// missing or not positive. Negative/blank prices fall back to 0.
+function computeUnitCost(totalPrice, quantity) {
+  const qty = toFiniteNumber(quantity);
+  if (qty === null || qty <= 0) {
+    return null;
+  }
+  const price = toNonNegativeNumber(totalPrice);
+  const safePrice = price === null ? 0 : price;
+  return Math.round((safePrice / qty) * 100000) / 100000;
+}
+
+// Quantity used so far in the current cycle = baseline - current (floored at 0).
+// Returns null when there is no usable baseline (no cycle yet).
+function computeConsumedQuantity(baselineQty, currentQty) {
+  const baseline = toFiniteNumber(baselineQty);
+  const current = toFiniteNumber(currentQty);
+  if (baseline === null || baseline <= 0 || current === null) {
+    return null;
+  }
+  return Math.round(Math.max(0, baseline - current) * 100) / 100;
 }
 
 // Client-side stock filter (mirrors the server) for snappy list updates.
@@ -196,12 +273,17 @@ module.exports = {
   toNonNegativeNumber,
   toPositiveNumber,
   formatQty,
+  formatPrice,
+  formatPercent,
   todayISO,
   parseDateInput,
+  validateAddItemForm,
   validateIngredientForm,
   validateMovementForm,
   computeUsagePercent,
   computeSuggestedQty,
+  computeUnitCost,
+  computeConsumedQuantity,
   filterStockList,
   purchaseStatusLabel,
   getErrorMessage,

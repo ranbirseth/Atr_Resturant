@@ -322,7 +322,7 @@ test('purchase price and opening cost/note are captured and persisted', async ()
     assert.equal(bad.status, 400);
 });
 
-test('75%-used cycle raises usageAlert and remainingPercent', async () => {
+test('70%-used cycle raises usageAlert (boundaries + restock reset)', async () => {
     const item = await createItem({ name: `Alert ${Date.now()}`, unit: 'kg', minimumStockLevel: 0, openingQty: 10 });
     assert.equal(item.usageAlert, false);
     assert.equal(item.remainingPercent, 100);
@@ -333,7 +333,18 @@ test('75%-used cycle raises usageAlert and remainingPercent', async () => {
     assert.equal(at20.data.remainingPercent, 80);
     assert.equal(at20.data.usageAlert, false);
 
-    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 6 });
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 4.9 });
+    const at69 = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(at69.data.usagePercent, 69);
+    assert.equal(at69.data.usageAlert, false);
+
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 0.1 });
+    const at70 = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(at70.data.usagePercent, 70);
+    assert.equal(at70.data.remainingPercent, 30);
+    assert.equal(at70.data.usageAlert, true);
+
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 1 });
     const at80 = await api('GET', `/ingredients/${item._id}`);
     assert.equal(at80.data.usagePercent, 80);
     assert.equal(at80.data.remainingPercent, 20);
@@ -423,5 +434,49 @@ test('alerts endpoint lists items with usage/low/out/need-to-buy flags', async (
     const row = res.data.find((r) => r.name === name);
     assert.ok(row, 'flagged item appears in alerts');
     assert.equal(row.usageAlert, true);
+});
+
+test('DELETE archives items with history instead of hard-deleting', async () => {
+    const item = await createItem({
+        name: `ArchiveDelete ${Date.now()}`,
+        unit: 'kg',
+        minimumStockLevel: 0,
+        openingQty: 10,
+    });
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 2 });
+
+    const res = await api('DELETE', `/ingredients/${item._id}`);
+    assert.equal(res.status, 200, JSON.stringify(res.data));
+    assert.equal(res.data.archived, true);
+    assert.equal(res.data.ingredient.isActive, false);
+    assert.ok(res.data.message.includes('archived'), 'message explains the archive');
+
+    const stillThere = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(stillThere.status, 200);
+    assert.equal(stillThere.data.isActive, false);
+    assert.equal(stillThere.data.currentQty, 8, 'balance untouched by archive');
+
+    const movements = await api('GET', `/stock/movements?ingredientId=${item._id}`);
+    assert.equal(movements.data.length, 2, 'history preserved');
+});
+
+test('DELETE hard-deletes only items with no movements or cycles', async () => {
+    const item = await createItem({
+        name: `HardDelete ${Date.now()}`,
+        unit: 'litre',
+        minimumStockLevel: 0,
+        openingQty: 0,
+    });
+    const res = await api('DELETE', `/ingredients/${item._id}`);
+    assert.equal(res.status, 200, JSON.stringify(res.data));
+    assert.equal(res.data.deleted, true);
+
+    const gone = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(gone.status, 404);
+});
+
+test('DELETE unknown id returns 404', async () => {
+    const res = await api('DELETE', `/ingredients/${new mongoose.Types.ObjectId()}`);
+    assert.equal(res.status, 404);
 });
 

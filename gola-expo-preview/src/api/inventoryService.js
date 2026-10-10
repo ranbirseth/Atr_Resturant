@@ -53,6 +53,16 @@ export async function setIngredientActive(id, active) {
   return api.post(`/inventory/ingredients/${id}/${active ? 'activate' : 'deactivate'}`, {});
 }
 
+// Safe delete: the backend hard-deletes only items with no stock history;
+// items with movements/cycles are archived (isActive=false) to preserve
+// records. Returns { deleted: true } or { archived: true, message, ingredient }.
+export async function deleteIngredient(id) {
+  if (!id) {
+    throw new Error('deleteIngredient requires an id');
+  }
+  return api.delete(`/inventory/ingredients/${id}`);
+}
+
 export async function setPurchaseStatus(id, status) {
   if (!id) {
     throw new Error('setPurchaseStatus requires an id');
@@ -81,4 +91,14 @@ export async function getCycles(ingredientId) {
 
 export async function reconcile(fix) {
   return api.post('/inventory/stock/reconcile', { fix: !!fix });
+}
+
+export async function getAnalytics(params) {
+  const data = await api.get('/inventory/analytics' + qs(params));
+  return data && typeof data === 'object' ? data : null;
+}
+
+export async function getAlerts() {
+  const data = await api.get('/inventory/alerts');
+  return Array.isArray(data) ? data : [];
 }

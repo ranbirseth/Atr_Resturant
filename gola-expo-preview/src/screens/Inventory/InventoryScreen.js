@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -6,41 +6,19 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 import StateView from '../../components/menu/StateView';
-import IngredientFormModal from './IngredientFormModal';
-import {
-  createIngredient,
-  getIngredients,
-  getUnits,
-  setIngredientActive,
-  updateIngredient,
-} from '../../api/inventoryService';
-import {
-  formatQty,
-  getErrorMessage,
-  purchaseStatusLabel,
-} from '../../utils/inventoryUtils';
+import AddItemModal from './AddItemModal';
+import { createIngredient, deleteIngredient, getIngredients, getUnits } from '../../api/inventoryService';
+import { formatQty, getErrorMessage } from '../../utils/inventoryUtils';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 
-function statusChip(item) {
-  if (item.isActive === false) {
-    return { label: 'Inactive', style: 'muted' };
-  }
-  if (item.outOfStock) {
-    return { label: 'Out of Stock', style: 'danger' };
-  }
-  if (item.lowStock) {
-    return { label: 'Low Stock', style: 'pending' };
-  }
-  return { label: 'Available', style: 'good' };
-}
-
+// Inventory section: a simple list of purchased items plus one "Add Inventory"
+// action. The add form captures only name, unit, total quantity and total price.
 export default function InventoryScreen() {
   const { width } = useWindowDimensions();
   const [items, setItems] = useState(null);
@@ -48,12 +26,10 @@ export default function InventoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState('');
-  const [actionError, setActionError] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const hasLoadedRef = useRef(false);
 
   const load = useCallback(async function load(isRefresh) {
@@ -82,130 +58,84 @@ export default function InventoryScreen() {
     ),
   );
 
-  const filtered = useMemo(
-    function () {
-      const list = Array.isArray(items) ? items : [];
-      const q = query.trim().toLowerCase();
-      if (!q) return list;
-      return list.filter((item) => String(item.name || '').toLowerCase().includes(q));
-    },
-    [items, query],
-  );
-
   const columns = width >= 1000 ? 3 : width >= 680 ? 2 : 1;
 
   function openCreate() {
-    setEditing(null);
-    setServerError(null);
-    setModalVisible(true);
-  }
-
-  function openEdit(item) {
-    setEditing(item);
     setServerError(null);
     setModalVisible(true);
   }
 
   function closeModal() {
     setModalVisible(false);
-    setEditing(null);
     setServerError(null);
   }
 
-  async function handleSubmit(payload) {
+  async function handleAdd(payload) {
     setSaving(true);
     setServerError(null);
     try {
-      if (editing) {
-        await updateIngredient(editing._id, payload);
-      } else {
-        await createIngredient(payload);
-      }
+      await createIngredient(payload);
       closeModal();
       load(true);
     } catch (saveError) {
-      setServerError(getErrorMessage(saveError, 'Failed to save item'));
+      setServerError(getErrorMessage(saveError, 'Failed to add inventory'));
     } finally {
       setSaving(false);
     }
   }
 
-  function confirmToggle(item) {
-    const makeActive = item.isActive === false;
+  function confirmDelete(item) {
     Alert.alert(
-      makeActive ? 'Activate item' : 'Deactivate item',
-      makeActive
-        ? `Set "${item.name}" active again?`
-        : `Deactivate "${item.name}"? Its stock history is kept.`,
+      'Delete inventory item',
+      `Delete "${item.name}"? Items that already have stock history are archived (kept for records) instead of removed.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: makeActive ? 'Activate' : 'Deactivate',
-          style: makeActive ? 'default' : 'destructive',
-          onPress: function () {
-            runToggle(item, makeActive);
-          },
-        },
+        { text: 'Delete', style: 'destructive', onPress: () => runDelete(item) },
       ],
     );
   }
 
-  async function runToggle(item, active) {
-    setActionError(null);
+  async function runDelete(item) {
+    if (deletingId) {
+      return;
+    }
+    setDeletingId(item._id);
     try {
-      await setIngredientActive(item._id, active);
+      const result = await deleteIngredient(item._id);
       load(true);
-    } catch (toggleError) {
-      setActionError(getErrorMessage(toggleError, 'Failed to update item'));
+      const title = result && result.archived ? 'Item archived' : 'Item deleted';
+      const message = (result && result.message) || (result && result.archived ? 'Kept to preserve stock history.' : 'Removed.');
+      Alert.alert(title, message);
+    } catch (deleteError) {
+      Alert.alert('Delete failed', getErrorMessage(deleteError, 'Failed to delete item'));
+    } finally {
+      setDeletingId(null);
     }
   }
 
   function renderCard({ item }) {
-    const chip = statusChip(item);
+    const deleting = deletingId === item._id;
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.itemName} numberOfLines={2}>
             {item.name}
           </Text>
-          <View style={[styles.badge, styles[chip.style]]}>
-            <Text style={[styles.badgeText, styles[`${chip.style}Text`]]}>{chip.label}</Text>
+          <View style={styles.badges}>
+            {item.isActive === false ? <Text style={styles.archivedPill}>Archived</Text> : null}
+            <Text style={styles.unitPill}>{item.unit}</Text>
           </View>
         </View>
-
-        <View style={styles.metaRow}>
-          <Text style={styles.meta}>Unit: {item.unit}</Text>
-          <Text style={styles.meta}>Min level: {formatQty(item.minimumStockLevel, item.unit)}</Text>
-        </View>
-        <View style={styles.metaRow}>
-          <Text style={styles.meta}>Expected demand: {formatQty(item.expectedDemand, item.unit)}</Text>
-        </View>
-
         <View style={styles.qtyRow}>
-          <Text style={styles.qtyLabel}>Current quantity</Text>
+          <Text style={styles.qtyLabel}>In stock</Text>
           <Text style={styles.qtyValue}>{formatQty(item.currentQty, item.unit)}</Text>
         </View>
-
-        {item.suggestedQty > 0 ? (
-          <Text style={styles.suggested}>Suggested buy: {formatQty(item.suggestedQty, item.unit)}</Text>
-        ) : null}
-
-        {item.purchaseStatus && item.purchaseStatus !== 'NONE' ? (
-          <Text style={styles.purchase}>Purchase: {purchaseStatusLabel(item.purchaseStatus)}</Text>
-        ) : null}
-
-        <View style={styles.actions}>
-          <Pressable style={styles.actionBtn} onPress={() => openEdit(item)}>
-            <Text style={styles.actionText}>Edit</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.actionBtn, item.isActive === false ? styles.activateBtn : styles.deactivateBtn]}
-            onPress={() => confirmToggle(item)}>
-            <Text style={item.isActive === false ? styles.activateText : styles.deactivateText}>
-              {item.isActive === false ? 'Activate' : 'Deactivate'}
-            </Text>
-          </Pressable>
-        </View>
+        <Pressable
+          style={[styles.deleteBtn, deleting && styles.disabled]}
+          disabled={deleting}
+          onPress={() => confirmDelete(item)}>
+          <Text style={styles.deleteText}>{deleting ? 'Removing…' : 'Delete'}</Text>
+        </Pressable>
       </View>
     );
   }
@@ -221,7 +151,7 @@ export default function InventoryScreen() {
     <View style={styles.container}>
       <FlatList
         key={columns}
-        data={filtered}
+        data={Array.isArray(items) ? items : []}
         keyExtractor={(item) => String(item._id)}
         numColumns={columns}
         renderItem={renderCard}
@@ -229,34 +159,20 @@ export default function InventoryScreen() {
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
         ListHeaderComponent={
-          <View>
-            <View style={styles.toolbar}>
-              <TextInput
-                style={styles.search}
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search inventory…"
-                placeholderTextColor={COLORS.muted}
-              />
-              <Pressable style={styles.addButton} onPress={openCreate}>
-                <Text style={styles.addButtonText}>+ Add Item</Text>
-              </Pressable>
-            </View>
-            {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
-          </View>
+          <Pressable style={styles.addButton} onPress={openCreate}>
+            <Text style={styles.addButtonText}>+ Add Inventory</Text>
+          </Pressable>
         }
-        ListEmptyComponent={<StateView mode="empty" message="No inventory items yet. Add one to get started." />}
+        ListEmptyComponent={<StateView mode="empty" message="No items yet. Tap Add Inventory to record a purchase." />}
       />
 
       {modalVisible ? (
-        <IngredientFormModal
-          key={editing ? editing._id : 'new'}
-          ingredient={editing}
+        <AddItemModal
           units={units}
           saving={saving}
           serverError={serverError}
           onClose={closeModal}
-          onSubmit={handleSubmit}
+          onSubmit={handleAdd}
         />
       ) : null}
     </View>
@@ -267,31 +183,15 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   listContent: { padding: SPACING.lg, paddingBottom: SPACING.xl * 2 },
   columns: { gap: SPACING.lg },
-  toolbar: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  search: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    fontSize: 15,
-    color: COLORS.text,
-    backgroundColor: COLORS.surface,
-  },
   addButton: {
     backgroundColor: COLORS.accent,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.md + 2,
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
   },
-  addButtonText: { color: '#ffffff', fontWeight: '700' },
-  actionError: { color: COLORS.danger, fontWeight: '600', marginBottom: SPACING.sm },
+  addButtonText: { color: '#ffffff', fontWeight: '800', fontSize: 15 },
   card: {
     flex: 1,
     backgroundColor: COLORS.surface,
@@ -308,18 +208,27 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   itemName: { flex: 1, fontSize: 16, fontWeight: '800', color: COLORS.text },
-  badge: { borderRadius: RADIUS.sm, paddingHorizontal: SPACING.sm, paddingVertical: 2 },
-  badgeText: { fontSize: 11, fontWeight: '700' },
-  good: { backgroundColor: '#e7f6ec' },
-  goodText: { color: COLORS.revenue },
-  pending: { backgroundColor: '#fdf3e3' },
-  pendingText: { color: COLORS.pending },
-  danger: { backgroundColor: COLORS.dangerBg },
-  dangerText: { color: COLORS.danger },
-  muted: { backgroundColor: COLORS.barTrack },
-  mutedText: { color: COLORS.muted },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.lg, marginTop: SPACING.sm },
-  meta: { fontSize: 13, color: COLORS.muted },
+  badges: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.xs },
+  archivedPill: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.muted,
+    backgroundColor: COLORS.barTrack,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
+  unitPill: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.muted,
+    backgroundColor: COLORS.barTrack,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
   qtyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -331,28 +240,15 @@ const styles = StyleSheet.create({
   },
   qtyLabel: { fontSize: 13, fontWeight: '700', color: COLORS.muted, textTransform: 'uppercase' },
   qtyValue: { fontSize: 18, fontWeight: '800', color: COLORS.text },
-  suggested: { marginTop: SPACING.sm, fontSize: 12, fontWeight: '700', color: COLORS.pending },
-  purchase: { marginTop: SPACING.sm, fontSize: 12, fontWeight: '700', color: COLORS.orders },
-  actions: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    marginTop: SPACING.lg,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  actionBtn: {
-    flex: 1,
+  deleteBtn: {
+    marginTop: SPACING.md,
     paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.sm,
+    borderRadius: RADIUS.md,
     alignItems: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.dangerBg,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.dangerBg,
   },
-  actionText: { color: COLORS.text, fontWeight: '700' },
-  deactivateBtn: { borderColor: COLORS.dangerBg, backgroundColor: COLORS.dangerBg },
-  deactivateText: { color: COLORS.danger, fontWeight: '700' },
-  activateBtn: { borderColor: '#e7f6ec', backgroundColor: '#e7f6ec' },
-  activateText: { color: COLORS.revenue, fontWeight: '700' },
+  deleteText: { color: COLORS.danger, fontWeight: '800', fontSize: 14 },
+  disabled: { opacity: 0.6 },
 });

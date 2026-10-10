@@ -6,8 +6,7 @@ import {Ionicons} from '@expo/vector-icons';
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
 import OrdersScreen from '../screens/Orders/OrdersScreen';
 import MenuCategoriesScreen from '../screens/MenuCategories/MenuCategoriesScreen';
-import InventoryScreen from '../screens/Inventory/InventoryScreen';
-import StockScreen from '../screens/Stock/StockScreen';
+import InventoryStockScreen from '../screens/InventoryStock/InventoryStockScreen';
 import UserCouponsScreen from '../screens/UserCoupons/UserCouponsScreen';
 import ReviewsAnalyticsScreen from '../screens/ReviewsAnalytics/ReviewsAnalyticsScreen';
 import BillingScreen from '../screens/Billing/BillingScreen';
@@ -66,22 +65,12 @@ export default function RootNavigator() {
           }}
         />
         <Drawer.Screen
-          name="Inventory"
-          component={InventoryScreen}
+          name="InventoryStock"
+          component={InventoryStockScreen}
           options={{
-            title: 'Inventory',
+            title: 'Inventory & Stock',
             drawerIcon: ({color, size}) => (
               <Ionicons name="cube-outline" color={color} size={size} />
-            ),
-          }}
-        />
-        <Drawer.Screen
-          name="Stock"
-          component={StockScreen}
-          options={{
-            title: 'Stock',
-            drawerIcon: ({color, size}) => (
-              <Ionicons name="layers-outline" color={color} size={size} />
             ),
           }}
         />

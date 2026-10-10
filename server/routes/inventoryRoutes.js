@@ -7,6 +7,7 @@ const {
     createIngredient,
     updateIngredient,
     setIngredientActive,
+    deleteIngredient,
     setPurchaseStatus,
     getStock,
     recordMovement,
@@ -26,6 +27,7 @@ router.get('/ingredients', getIngredients);
 router.post('/ingredients', createIngredient);
 router.get('/ingredients/:id', getIngredient);
 router.put('/ingredients/:id', updateIngredient);
+router.delete('/ingredients/:id', deleteIngredient);
 router.post('/ingredients/:id/activate', (req, res) => {
     req.body = { active: true };
     return setIngredientActive(req, res);

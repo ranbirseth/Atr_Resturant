@@ -4,6 +4,12 @@ import { COLORS, RADIUS, SPACING } from '../../theme';
 import StatusBadge from './StatusBadge';
 import OrderItemRow from './OrderItemRow';
 import { computeSessionTotals, formatCurrency, formatTime } from '../../utils/orderUtils';
+import {
+  billStatusLabel,
+  billStatusStyle,
+  paymentStatusLabel,
+  paymentStatusStyle,
+} from '../../utils/billUtils';
 
 function OrderDetail({ order, index }) {
   if (!order) {
@@ -37,7 +43,7 @@ function OrderDetail({ order, index }) {
   );
 }
 
-export default function SessionDetailsModal({ visible, session, onClose }) {
+export default function SessionDetailsModal({ visible, session, bill, onOpenBill, onClose }) {
   const orders = session && Array.isArray(session.orders) ? session.orders : [];
   const totals = computeSessionTotals(orders);
 
@@ -99,6 +105,45 @@ export default function SessionDetailsModal({ visible, session, onClose }) {
                     <Text style={styles.grandValue}>{formatCurrency(totals.totalAmount)}</Text>
                   </View>
                 </View>
+
+                <View style={[styles.totalsBox, styles.billBox]}>
+                  <View style={styles.billRow}>
+                    <Text style={styles.billTitle} numberOfLines={1}>
+                      {bill ? (bill.billNumber || 'Bill') : 'No bill yet'}
+                    </Text>
+                    {bill ? (
+                      <View style={styles.billBadges}>
+                        <Badge
+                          label={billStatusLabel(bill.status)}
+                          palette={billStatusStyle(bill.status)}
+                        />
+                        <Badge
+                          label={paymentStatusLabel(bill.paymentStatus, bill)}
+                          palette={paymentStatusStyle(bill.paymentStatus, bill)}
+                        />
+                      </View>
+                    ) : null}
+                  </View>
+                  {bill ? (
+                    <>
+                      <View style={styles.totalLine}>
+                        <Text style={styles.totalLineLabel}>Paid</Text>
+                        <Text style={styles.totalLineValue}>{formatCurrency(bill.amountPaid)}</Text>
+                      </View>
+                      <View style={styles.totalLine}>
+                        <Text style={styles.totalLineLabel}>Balance Due</Text>
+                        <Text style={styles.totalLineValue}>{formatCurrency(bill.balanceDue)}</Text>
+                      </View>
+                    </>
+                  ) : null}
+                  <Pressable
+                    style={styles.billBtn}
+                    onPress={() => onOpenBill && onOpenBill(session)}>
+                    <Text style={styles.billBtnText}>
+                      {bill ? 'Open Bill' : 'Generate Bill'}
+                    </Text>
+                  </Pressable>
+                </View>
               </>
             ) : (
               <Text style={styles.customerMeta}>No session selected.</Text>
@@ -107,6 +152,17 @@ export default function SessionDetailsModal({ visible, session, onClose }) {
         </View>
       </View>
     </Modal>
+  );
+}
+
+function Badge({ label, palette }) {
+  if (!label) {
+    return null;
+  }
+  return (
+    <View style={[styles.badge, { backgroundColor: palette.bg, borderColor: palette.border }]}>
+      <Text style={[styles.badgeText, { color: palette.fg }]}>{label}</Text>
+    </View>
   );
 }
 
@@ -279,5 +335,48 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     color: COLORS.text,
+  },
+  billBox: {
+    marginTop: SPACING.md,
+  },
+  billRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
+  },
+  billTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.text,
+    flexShrink: 1,
+  },
+  billBadges: {
+    flexDirection: 'row',
+    marginLeft: SPACING.sm,
+  },
+  badge: {
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    marginLeft: SPACING.xs,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  billBtn: {
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    borderRadius: RADIUS.sm,
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+  },
+  billBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.accent,
   },
 });

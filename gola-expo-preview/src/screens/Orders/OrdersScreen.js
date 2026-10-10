@@ -16,6 +16,7 @@ import SearchBar from '../../components/orders/SearchBar';
 import FilterChips from '../../components/orders/FilterChips';
 import SessionOrderCard from '../../components/orders/SessionOrderCard';
 import SessionDetailsModal from '../../components/orders/SessionDetailsModal';
+import BillModal from '../../components/orders/BillModal';
 import { getGroupedOrders, updateOrderStatus } from '../../api/orderService';
 import { subscribeToOrders } from '../../api/socketClient';
 import { COLORS, RADIUS, SPACING } from '../../theme';
@@ -65,6 +66,9 @@ export default function OrdersScreen() {
   const [query, setQuery] = useState('');
   const [selectedSession, setSelectedSession] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [billBySession, setBillBySession] = useState({});
+  const [billSession, setBillSession] = useState(null);
+  const [billModalVisible, setBillModalVisible] = useState(false);
   const [pendingOrderIds, setPendingOrderIds] = useState({});
   const [actionError, setActionError] = useState(null);
   const [banner, setBanner] = useState(null);
@@ -212,6 +216,37 @@ export default function OrdersScreen() {
     setModalVisible(true);
   }, []);
 
+  const applyBill = useCallback(function (sessionId, bill) {
+    if (!sessionId) {
+      return;
+    }
+    setBillBySession(function (prev) {
+      if (prev[sessionId] === bill) {
+        return prev;
+      }
+      const next = Object.assign({}, prev);
+      next[sessionId] = bill;
+      return next;
+    });
+  }, []);
+
+  const openBillModal = useCallback(function (session) {
+    if (!session || !session.sessionId) {
+      return;
+    }
+    setBillSession(session);
+    setBillModalVisible(true);
+  }, []);
+
+  const handleBillChange = useCallback(
+    function (bill) {
+      if (billSession) {
+        applyBill(billSession.sessionId, bill);
+      }
+    },
+    [billSession, applyBill],
+  );
+
   const filteredSessions = useMemo(
     function () {
       return applyFilters(sessions, { status: filter, query: query });
@@ -234,11 +269,13 @@ export default function OrdersScreen() {
             onStatusAction={handleStatusAction}
             onCancelRequest={handleCancelRequest}
             onViewDetails={openDetails}
+            bill={billBySession[session.sessionId]}
+            onOpenBill={openBillModal}
           />
         </View>
       );
     },
-    [pendingOrderIds, handleStatusAction, handleCancelRequest, openDetails],
+    [pendingOrderIds, handleStatusAction, handleCancelRequest, openDetails, billBySession, openBillModal],
   );
 
   return (
@@ -307,8 +344,19 @@ export default function OrdersScreen() {
       <SessionDetailsModal
         visible={modalVisible}
         session={selectedSession}
+        bill={billBySession[selectedSession && selectedSession.sessionId]}
+        onOpenBill={openBillModal}
         onClose={() => setModalVisible(false)}
       />
+      {billSession ? (
+        <BillModal
+          key={billSession.sessionId}
+          visible={billModalVisible}
+          session={billSession}
+          onClose={() => setBillModalVisible(false)}
+          onChangeBill={handleBillChange}
+        />
+      ) : null}
     </View>
   );
 }

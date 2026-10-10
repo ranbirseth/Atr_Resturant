@@ -14,13 +14,12 @@ const itemSchema = new mongoose.Schema({
             message: 'price must be a finite number',
         },
     },
-    // Staff-facing price (dual pricing). Required when creating a NEW item so
-    // the staff menu can never be silently priced from `price`. Function-based
-    // `required` (only for new documents) keeps legacy records that predate
-    // dual pricing readable and lets their unrelated fields be updated.
+    // Legacy staff-facing price. Kept ONLY so documents that predate P1.1
+    // remain readable and editable in unrelated fields. It is no longer
+    // required, no longer writable via the API, and is never used for pricing:
+    // the staff price is now derived as 60% of `price` in menuUtils.js.
     staffPrice: {
         type: Number,
-        required: function () { return this.isNew; },
         min: [0, 'staffPrice must be greater than or equal to 0'],
         validate: {
             validator: (value) => value === undefined || value === null ||

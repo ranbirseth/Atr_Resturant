@@ -11,6 +11,12 @@ import {
 } from '../../utils/orderUtils';
 import StatusBadge from './StatusBadge';
 import OrderItemRow from './OrderItemRow';
+import {
+  billStatusLabel,
+  billStatusStyle,
+  paymentStatusLabel,
+  paymentStatusStyle,
+} from '../../utils/billUtils';
 
 function customerName(session) {
   const user = session && session.userId;
@@ -105,12 +111,25 @@ function terminalLabel(status) {
   return '';
 }
 
+function BillBadge({ label, palette }) {
+  if (!label) {
+    return null;
+  }
+  return (
+    <View style={[styles.billBadge, { backgroundColor: palette.bg, borderColor: palette.border }]}>
+      <Text style={[styles.billBadgeText, { color: palette.fg }]}>{label}</Text>
+    </View>
+  );
+}
+
 export default function SessionOrderCard({
   session,
   pendingOrderIds,
   onStatusAction,
   onCancelRequest,
   onViewDetails,
+  bill,
+  onOpenBill,
 }) {
   const [expanded, setExpanded] = React.useState(false);
 
@@ -187,6 +206,24 @@ export default function SessionOrderCard({
           <Text style={styles.totalLabel}>Session Total</Text>
           <Text style={styles.totalValue}>{formatCurrency(session.totalAmount)}</Text>
         </View>
+        <Pressable
+          style={styles.billRow}
+          onPress={() => onOpenBill && onOpenBill(session)}>
+          <Text style={styles.billRowLabel} numberOfLines={1}>
+            {bill ? (bill.billNumber || 'Bill') : 'No bill yet'}
+          </Text>
+          {bill ? (
+            <View style={styles.billRowBadges}>
+              <BillBadge label={billStatusLabel(bill.status)} palette={billStatusStyle(bill.status)} />
+              <BillBadge
+                label={paymentStatusLabel(bill.paymentStatus, bill)}
+                palette={paymentStatusStyle(bill.paymentStatus, bill)}
+              />
+            </View>
+          ) : (
+            <Text style={styles.billRowAction}>Bill Now</Text>
+          )}
+        </Pressable>
         <Pressable style={styles.detailsBtn} onPress={() => onViewDetails && onViewDetails(session)}>
           <Text style={styles.detailsText}>View Session Details</Text>
         </Pressable>
@@ -405,6 +442,43 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.sm,
     paddingVertical: SPACING.md,
     alignItems: 'center',
+  },
+  billRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  billRowLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.text,
+    flexShrink: 1,
+  },
+  billRowAction: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.accent,
+  },
+  billRowBadges: {
+    flexDirection: 'row',
+    marginLeft: SPACING.sm,
+  },
+  billBadge: {
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    marginLeft: SPACING.xs,
+  },
+  billBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   detailsText: {
     fontSize: 13,

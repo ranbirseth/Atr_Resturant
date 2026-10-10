@@ -10,7 +10,6 @@ const AUDIENCES = ['CUSTOMER', 'STAFF'];
 const ITEM_WRITABLE_FIELDS = [
     'name',
     'price',
-    'staffPrice',
     'description',
     'image',
     'category',
@@ -52,6 +51,17 @@ function toFinitePrice(value) {
 
 function isValidPrice(value) {
     return toFinitePrice(value) !== null;
+}
+
+// P1.1: the staff price is ALWAYS derived from the authoritative customer
+// price as 60% of it, rounded to two decimal places (half-paise rounds up via
+// Math.round). The legacy stored `staffPrice` field is never used for pricing.
+function computeStaffPrice(price) {
+    const base = toFinitePrice(price);
+    if (base === null) {
+        return null;
+    }
+    return Math.round(base * 0.6 * 100) / 100;
 }
 
 // Accepts booleans and the "true"/"false" strings multipart forms produce.
@@ -116,12 +126,6 @@ function validateItemInput(body, options = {}) {
         const price = toFinitePrice(src.price);
         if (price === null) errors.push('Customer price must be a finite number greater than or equal to 0');
         else value.price = price;
-    }
-
-    if (!partial || src.staffPrice !== undefined) {
-        const staffPrice = toFinitePrice(src.staffPrice);
-        if (staffPrice === null) errors.push('Staff price must be a finite number greater than or equal to 0');
-        else value.staffPrice = staffPrice;
     }
 
     if (src.description !== undefined) {
@@ -239,9 +243,11 @@ function buildAuthoritativeOrder(options = {}) {
                 errors.push(`"${dbItem.name}" is currently unavailable`);
                 return;
             }
-            unitPrice = toFinitePrice(dbItem.staffPrice);
+            // P1.1: staff price is derived from the customer price (60%),
+            // never from a manually stored value.
+            unitPrice = computeStaffPrice(dbItem.price);
             if (unitPrice === null) {
-                errors.push(`Staff price is not configured for "${dbItem.name}"`);
+                errors.push(`Price is not configured for "${dbItem.name}"`);
                 return;
             }
         } else {
@@ -287,6 +293,7 @@ module.exports = {
     CATEGORY_WRITABLE_FIELDS,
     toFiniteNumber,
     toFinitePrice,
+    computeStaffPrice,
     isValidPrice,
     toBoolean,
     normalizeAudience,

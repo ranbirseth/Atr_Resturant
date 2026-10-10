@@ -497,3 +497,191 @@ Test-mapping to the phase checklist: (1) one `Inventory & Stock` drawer entry �
 1. Owner smoke test on the live deployment once the backend is published: Add 10 L → Consume 7 L (70% alert appears) → Consume 1 more (80%, still alert) → Restock 4 L (returns 7 L, alert cleared) → Delete the item (should archive because history exists).
 2. Physical tablet visual check of the new Delete button + alert line.
 3. Not done here: `expo-doctor`, `tsc --noEmit` (no `tsconfig.json`).
+
+---
+
+# GOLA_RESTAURANT - Phase 2A (2026-10-10): Orders Module — Read-Only Investigation & Audit
+
+## A.0 Scope and rules
+
+- **Mode:** STRICT READ-ONLY. This is an investigation and audit phase. Everything below is a **confirmation of what exists**, not a specification of what to build. No implementation was requested or performed.
+- **Date:** 2026-10-10. Repo: branch `main`, working tree clean (last commit `e4b8f1b "next fix"`).
+- Protected directories (`client/`, `AdminDashbord/`, `print-service/`, `react native frontend/`) were **only read**; `server/` and `gola-expo-preview/` were **not modified** — zero source/DB/deploy changes.
+- Live API checked **read-only** (GET only, no writes): `https://atr-resturant.onrender.com/` → `200` "API is running..."; `GET /api/orders/analytics?range=1d` → `200` (0 orders today). `https://resturent-billing.onrender.com` (the web-admin Billing page's API target) **timed out** — see F11.
+
+## A.1 End-to-end architecture / data flow (verified from source)
+
+1. **Customer web app (`client/`, React+Vite)** — `client/src/pages/OrderType.jsx:57` builds the order payload and calls `placeOrder` → `client/src/context/AppContext.jsx:153` → `POST /api/orders` with `{ userId, items:[{itemId,name,quantity,price,customizations}], totalAmount, grossTotal, couponCode, discountAmount, orderType('Dine-in'|'Takeaway'), tableNumber, isDelivery, deliveryAddress }`. The new order id is kept as `currentOrderId` (localStorage) and `client/src/pages/Countdown.jsx` polls `GET /api/orders/:id` every 5s, shows a 2-minute cancel window (`PUT /api/orders/:id/status {status:'Cancelled'}`), and triggers feedback (`feedbackStatus`) once status is `Ready`/`Completed`. **The customer app has no bill/receipt/invoice.**
+2. **Backend (`server/`)** — `server/routes/orderRoutes.js`: `GET /analytics`, `POST /`, `GET /grouped`, `GET /`, `GET /:id`, `PUT /:id/status`, `PUT /:id/update`, `PUT /print-success`.
+   - `POST /api/orders` → `createOrder` (`server/controllers/orderController.js:20`): requires `userId` + non-empty items, validates ObjectIds, builds lines **server-authoritatively** via `buildAuthoritativeOrder` (`server/utils/menuUtils.js` — client-supplied prices/totals are ignored), re-validates the coupon server-side, computes `totalAmount = subtotal - discount`, generates `sessionId = user_{userId}_date_{YYYYMMDD}` (`server/utils/SessionManager.js`), sets `status:'PLACED'`, then **broadcasts** `sessionOrderUpdate` + `newOrder` to every connected socket (lines 144, 150).
+   - `GET /grouped` → `getGroupedOrders` (line 310): groups all orders by `sessionId`, sums `totalAmount`/`grossTotal`/`discountAmount`, derives one session `status` by priority (map at lines 370–385 — **lacks uppercase `PREPARING`/`READY`**, see F7).
+   - `PUT /:id/status` → `updateOrderStatus` (line 188): transition-guarded by `validateStatusTransition` (lines 259–293), writes with `Order.updateOne` **without `runValidators`** (see F8), re-broadcasts the session.
+   - `PUT /:id/update` → `updateOrder` (line 625): replaces `items`/`totalAmount`/`grossTotal`/`discountAmount` straight from the request body **with no server-side re-validation** (see F5), snapshots the previous state, sets `status:'CHANGED'`.
+   - `GET /analytics` → `getAnalytics` (line 426): `$sum totalAmount` over a date range **with no status filter** (see F6).
+   - `PUT /print-success` → `confirmPrintStatus` (line 571): sets `kotPrinted`, pushes `kotHistory`.
+3. **Expo tablet (`gola-expo-preview/`)** — `src/screens/Orders/OrdersScreen.js` loads `GET /api/orders/grouped`, subscribes to `sessionOrderUpdate`/`newOrder` (`src/api/socketClient.js`), rebuilds sessions with `buildSession` + `computeSessionStatus`/`computeSessionTotals` (`src/utils/orderUtils.js`), and per-order actions from `SessionOrderCard` call `PUT /orders/:id/status` (`src/api/orderService.js`). **No Bill / Print / KOT anywhere in the Orders module** (grep for `Bill|bill|Print|print|KOT|kot` in `src/components/orders/` → no matches). Active API base: `https://atr-resturant.onrender.com/api` (`src/api/config.js:17`).
+4. **Web admin (`AdminDashbord/`)** — `Orders.jsx` also loads `/grouped` + socket; on ACCEPTED it auto-prints a KOT via the local `print-service` (port 6001) and calls `PUT /orders/print-success`. `SessionOrderCard.jsx:329-335` shows a **Bill** button (ACCEPTED-workflow orders only) → `Orders.jsx:330-433 generateSessionPdf` (jsPDF): filters billable orders (ACCEPTED/Accepted/COMPLETED/Completed/Preparing/Ready), merges items, sums totals, and either downloads the PDF or shares it via `https://wa.me/91…` (hardcoded `+91`). **The bill is rendered client-side; nothing is written to the backend and no payment is recorded.**
+5. **Analytics surfaces disagree:** Expo Dashboard (`DashboardScreen.js` → `dashboardService.js` → raw `GET /orders`) computes revenue client-side **excluding CANCELLED** (`dashboardMetrics.computeStats` + `analyticsUtils.computeAnalytics`). Web admin Analytics (`Analytics.jsx` → `orderService.getAnalytics`) uses the server `/orders/analytics`, which **includes CANCELLED orders** in revenue/trend/top-items.
+
+## A.2 Owner requirement → current status
+
+| Requirement (Orders saga) | Backend `server/` | Expo tablet admin | Web admin (`AdminDashbord/`) | Verdict |
+|---|---|---|---|---|
+| Customer places order → API → DB | ✅ `POST /api/orders` | — | — | Implemented |
+| Admin Orders screen shows live orders | ✅ socket broadcast + `/grouped` | ✅ implemented | ✅ implemented | Implemented |
+| Orders grouped into visit sessions with session total | ✅ `GET /grouped` (sums totals) | ✅ session cards/total | ✅ session cards/total | Implemented |
+| **Online order has a Bill button that generates its bill** | ❌ no bill/print endpoint | ❌ **missing entirely** | ⚠️ client-side PDF only; not persisted; no payment flag | Missing on Expo; partially on web admin |
+| Payment recorded / order marked paid | ❌ no `paymentStatus`/`paymentMethod`/`isPaid`/Bill/Invoice model (only Order/Coupon/User/…) | ❌ (Billing module is local POS preview — `billing-implementation.md`) | ❌ | Missing |
+| KOT printing | ✅ `print-success`/`kotPrinted` | ❌ absent | ⚠️ auto-KOT on accept (needs local print-service) | Partial (web only) |
+| Customer cancel / status watch | ✅ transitions + polling | n/a | n/a | Implemented |
+| Analytics / dashboard | ✅ `/orders/analytics` (status-unfiltered) | ✅ client-side (cancelled-excluded) | ✅ (server endpoint) | Implemented but inconsistent (F6) |
+
+## A.3 Findings (severity + classification)
+
+- **F1 — High · Missing:** No payment/bill-of-record anywhere. `server/models/Order.js` has no `paymentStatus`/`paymentMethod`/`isPaid`, and the six models (`User, Order, Coupon, Feedback, Category, Item`) contain no Bill/Invoice/Payment model (consistent with `billing-implementation.md` §1.1). Consequences: orders are never marked paid; "revenue" equals the sum of ordered amounts regardless of collection; a session cannot be "settled". **Requirement "payment recorded" is missing end-to-end.**
+- **F2 — High · Missing (Expo) / Partial (web):** No **Bill action on online-order sessions in the Expo tablet Orders screen** — the primary admin UI. `SessionOrderCard.jsx` (Expo) only offers status actions + Cancel + "View Session Details"; `SessionDetailsModal` lists items/totals only. The web admin's Bill (F3) is not portable to the tablet.
+- **F3 — High · Missing:** No server-side persistent bill. Web-admin bill is a **client-rendered jsPDF** (`Orders.jsx:330-433`) with duplicated totalling/filtering logic; nothing is stored, re-generated bills are repeatable but unreferenced, and no bill id/history exists. Rules ("billable = ACCEPTED-workflow only") exist only in the UI, not the backend.
+- **F4 — High · Confirmed bug (security):** All order endpoints are unauthenticated. `GET /orders`, `/orders/grouped`, `/orders/:id`, `/orders/analytics` expose customer `name` + **mobile** (PII) to anyone; `PUT /:id/status`, `PUT /:id/update`, `PUT /print-success` accept writes from any caller with an order `_id` (an attacker can cancel/complete or alter prices). Known/open because the owner disabled login — but it is a verified risk, and `updateOrder` (F5) makes the write path particularly dangerous.
+- **F5 — Medium · Confirmed bug:** `updateOrder` (`orderController.js:625-698`) applies client-supplied `items`, `totalAmount`, `grossTotal`, `discountAmount` without re-validating against the menu (unlike `createOrder`, which is authoritative). A client can change line prices/quantities or totals, desyncing order value vs menu price and skewing analytics.
+- **F6 — Medium · Confirmed bug (analytics accuracy):** Server `getAnalytics` aggregates **all statuses by date**, so CANCELLED (and never-completed) orders inflate `totalRevenue`, `totalOrders`, `revenueTrend` and `topItems` (the Expo dashboard and `analyticsUtils` explicitly exclude CANCELLED — so web-admin and tablet dashboards disagree; today's live `range=1d` call returned 0/0/0, so the live site is effectively empty, but the logic bug is present).
+- **F7 — Medium · Confirmed (edge):** Server `getGroupedOrders` statusPriority (lines 370–385) has **no uppercase `PREPARING`/`READY`** → priority 0 → a session whose only active order is uppercase `PREPARING` would be reported `COMPLETED` by the server grouping. Today Expo deliberately sends legacy `'Preparing'`/`'Ready'` (documented in `orderUtils.js:344-366`) so the normal flow is safe; the risk appears only if a client sends uppercase (which `validateStatusTransition` accepts).
+- **F8 — Medium · Confirmed (data-integrity):** `Order` status enum (`Order.js:33-39`) contains legacy `'Preparing'`/`'Ready'` but **not** uppercase `PREPARING`/`READY`, yet `updateOrderStatus` writes via `Order.updateOne` **without `runValidators`**, so arbitrary/uppercase statuses can be stored and later break session-status logic.
+- **F9 — Medium · Gap:** **Zero automated tests for the order flow.** `server/` tests cover only order-adjacent utils (`menuUtils`, `couponUtils`, `inventoryUtils`) + inventory API; Expo tests cover pure utils only. Nothing exercises `createOrder`, transitions, grouped status, or analytics aggregation.
+- **F10 — Low · Confirmed:** Web-admin WhatsApp bill share hardcodes `+91` (`Orders.jsx:453`) — breaks for non-Indian mobiles; bill shares a text message with a PDF to manually attach.
+- **F11 — Medium/High · Confirmed (integration):** The web-admin **Billing page** (`AdminDashbord/src/services/billingService.js:4`) targets `https://resturent-billing.onrender.com/api` — a **different backend** from the main `atr-resturant.onrender.com` used by everything else — and that URL **timed out** (unreachable during this audit). The POS-style Billing inside the admin is effectively pointing at a dead/dormant service, separate from the Expo Billing module (POS-preview) and from the Orders bill.
+- **F12 — Low · Confirmed (hygiene):** `react native frontend/` is a stale/duplicate Expo admin app skeleton (same Billing/Dashboard/Orders screens), not a customer app — easy to confuse with the real customer app (`client/`).
+
+## A.4 Ordered implementation plan (future phase — NOT executed here)
+
+Proposed low-risk order if the owner proceeds (each is a separate implementable unit):
+1. **F2/F3 root first:** add a server `PUT /api/orders/bill` (or `POST /api/sessions/:id/settle`) that server-side totals, marks orders `paid:true`, and returns a bill record (new `Bill` model or fields on `Order`).
+2. **F4/F5 hardening:** require admin proof on order write routes and re-authoritative `updateOrder` (or remove client prices).
+3. **Expo Orders Bill:** Bill button on `SessionOrderCard` + `SessionDetailsModal` wired to the new endpoint.
+4. **F6/F7/F8:** status-filter `analytics`, add uppercase statuses to server maps, add `runValidators` or schema members.
+5. **F9:** add order-flow API tests (isolated test DB); **F10/F11:** fix share + retire/deploy the billing API.
+
+## A.5 Verification executed (all local, no production data touched)
+
+- `server/ npm test` → **62/62 pass** (`tests/inventory.api.test.js` uses the dedicated `gola_inventory_test` DB and drops it; utility tests are pure). No order tests exist (F9).
+- `gola-expo-preview/ node --test "src/utils/*.test.js"` → **106/106 pass**.
+- Live read-only: main API root `200`, `GET /api/orders/analytics?range=1d` `200` (0 orders); `resturent-billing.onrender.com` unreachable.
+- **Not claimed:** end-to-end order creation against production, physical tablet check, any live write, or order-flow automated coverage (none exists).
+
+## A.6 Risks / dependencies
+
+- Any future bill/payment feature requires a **backend change + Render deploy** before the Expo tablet can use it (same dependency as Phase 1E backend items).
+- Implementing bills without payment state (F1) would be cosmetic — decide first whether "bill" means *printable itemised receipt* vs *recorded transaction*.
+- The dead `resturent-billing` backend (F11) should be retired or repointed so no admin surface silently points at a missing server.
+- Reminder: Phase 1E's 70% threshold + inventory delete endpoint still await the backend deploy to take effect in production.
+
+## A.7 Summary
+
+The Orders core loop (customer → order API → DB → session grouping → live admin screen → status lifecycle → analytics) is **working and consistent** across customer, backend, and both admin UIs. The gaps cluster around the **bill/payment half of the requirement**: no persistent bill exists, the **Expo tablet (primary admin UI) has no Bill action at all**, nothing records a payment, and the reports that mention "revenue" cannot distinguish paid from unpaid orders. Security, analytics-status and status-enum issues (F4–F8) are real but were already known consequences of the owner's deliberate no-login choice and the legacy-migration status scheme.
+
+---
+
+## B.0 Phase 2B — Bills & Payments (server + Expo): Implementation Report
+
+> **Status: IMPLEMENTED — SERVER + EXPO UI COMPLETE, AWAITING OWNER/PRODUCTION REVIEW.**
+> This phase adds a persistent, server-authoritative bill/payment system (phase 2A finding F1) and wires the Bill action into the Expo admin tablet (phase 2A "awaiting decision" item 2). Landed strictly in `server/` + `gola-expo-preview/` + `docs/`. **No protected directory touched** (`client/`, `AdminDashbord/`, `print-service/`, `react native frontend/`, and the pre-existing Order/orderRoute/menuUtil/SessionManager/Config code remain read-only). **No new dependencies** — only Node built-ins (`crypto.randomUUID`) and the existing mongoose.
+
+### B.0.1 Corrected final spec (owner-approved)
+
+- Explicit payment state machine stored on the Bill: `RECORDED → REVERSING → REVERSED`; every transition guarded & idempotent; crash mid-reversal recoverable via `resume`.
+- Reconciling a BILL lock is safe only once it is provably gone (stale capture) or its Bill is `VOID`; never deletes `OPEN`/`SETTLED`/`VOIDING` bill locks (allows the mutex to survive a partial crash).
+- Cancels/changes blocked `409 ORDER_ALREADY_BILLED` once any order in the session belongs to a non-void bill.
+- Money as **integer paise** in Mongo; the REST API converts to/from rupees — the only place floats are touched.
+- Independent settlement, delta bills, dedicated `/api/billing` router (decisions D1–D3, D5–D7 confirmed).
+
+### B.0.2 Server implementation (all green)
+
+| # | Item | Evidence |
+|---|---|---|
+| 1 | Pure helpers: billable set, `computeBillTotals` (per-order capture snapshot), paise↔rupees, payment/void input validation, `derivePaymentStatus`, PII-free `toBillDTO` | `server/utils/billingUtils.js` |
+| 2 | Models: `Bill` (immutable snapshot, `payments.paymentId` **sparse unique index**, per‑bill `_id` pre-generated), `OrderLock` (partial unique index on active-per-order, TTL only on TRANSITION locks), shared `Counter` (`BILL-YYYYMMDD-NNNN` via `nextBillNumber`) | `server/models/{Bill,OrderLock,Counter}.js` |
+| 3 | Controller endpoints: generate, session/`single` read, record payment, reverse payment, void, resume (crash recovery) | `server/controllers/billingController.js` |
+| 4 | Router mounted at `/api/billing` in `server.js` after the order routes | `server/routes/billingRoutes.js`, `server/server.js` |
+| 5 | **OrderLock guard wired into `updateOrderStatus` + `updateOrder`** (cancels on non-void bills → `409 ORDER_ALREADY_BILLED`; releases the lock in `finally`) | `server/controllers/orderController.js` |
+| 6 | Test-harness fix: `dropDatabase()` wipes auto-built indexes, so the API tests re-run `syncIndexes()` for `Bill`/`OrderLock`/`Counter` in `before()` (matching production's boot-time autoIndex build) | `server/tests/billing.api.test.js` |
+| 7 | `resumeReversals` returns the non-ok `finished` result (409) instead of silently returning a stale bill when a reversal refuses to progress | `server/models/Bill.js` |
+
+Tests: `server/ npm test` → **90/90 pass** (62 baseline + 12 `billingUtils` unit + 16 `billing.api` integration on the dedicated `gola_billing_test` DB). Covered: full-pay auto-settle, overpay `409 EXCEEDS_BALANCE` + idempotent replay `200`, reversal-only-before-settlement `409 BILL_SETTLED`, `VOID_IN_PROGRESS` / `REVERSAL_IN_PROGRESS` 409s, idempotent reversals/voids, concurrent payment/void races, deadlock-avoidance, crash recovery of `REVERSING` and `VOIDING` states, and order-status-block after billing.
+
+### B.0.3 Expo (tablet) implementation
+
+| # | Item | Evidence |
+|---|---|---|
+| 1 | Thin API wrappers over `/api/billing` (errors keep `status`/`data` for friendly decoding) | `gola-expo-preview/src/api/billService.js` |
+| 2 | Pure display helpers + error-code mapping (`billStatus`, derived `paymentStatus`, method labels, `pickPrimaryBill`, `canPay/void/reverse`, amount validation on rupees) + 16 unit tests | `gola-expo-preview/src/utils/billUtils.js` + `billUtils.test.js` |
+| 3 | New `BillModal`: generate-bill / bill summary (number + status chips, total/paid/balance) / payment list with per-payment Reverse / Record-Payment (amount + method chips CASH/UPI/CARD/WALLET/OTHER) / Resume when `VOIDING` / destructive Void; all 409 codes surface friendly messages; per-session remount via `key` avoids stale fetches | `gola-expo-preview/src/components/orders/BillModal.js` |
+| 4 | `SessionOrderCard` footer shows a bill row (no-bill → "Bill Now"; else bill number + status + payment chips) | `gola-expo-preview/src/components/orders/SessionOrderCard.js` |
+| 5 | `SessionDetailsModal` shows a Billing box (status chips, paid/balance, Open/Generate Bill) | `gola-expo-preview/src/components/orders/SessionDetailsModal.js` |
+| 6 | `OrdersScreen` keeps `billBySession` cache, opens the modal, and refreshes card badges via `onChangeBill` | `gola-expo-preview/src/screens/Orders/OrdersScreen.js` |
+
+Verify: `node --test src/utils/*.test.js` → **122/122 pass** (106 baseline + 16 new); `npx expo lint` → **0 errors** (project-wide). No `tsconfig.json` in the project, so `tsc` typecheck remains unavailable by design.
+
+### B.0.4 Behaviour notes & deployment requirement
+
+- A bill is an **immutable snapshot**: re-billing the same eligible orders is rejected `409 ALREADY_BILLED`; the delta-bill rule allows *new/newly-billable* orders on a later generate.
+- Full payment auto-settles the bill (`SETTLED`); reversal after settlement is refused (`409 BILL_SETTLED` — void the bill instead); voiding resets all recorded payments and releases the per-order locks **after** the void commits.
+- **Deploy first:** the new `/api/billing` endpoints and the `ORDER_ALREADY_BILLED` guard only take effect after the server is deployed (Render) — until then the tablet Bill actions will hit 404s. Follow `RAILWAY_DEPLOYMENT.md` / `QUICK_DEPLOY.md`.
+
+### B.0.5 Remaining / not verified in this environment
+
+- Owner smoke test on the **live deploy**: generate bill → pay partial/full → reverse a payment → settle → void; confirm tablet reflects each state.
+- Physical-tablet visual check of `BillModal` (amounts, method chips, badges, 409 banners).
+- No auth was added to `/api/billing` (consistent with the owner's explicit no-login decision); write endpoints are open like the rest of the admin API (documented risk, as in earlier phases).
+
+---
+
+## C.0 P1.1 — Backend Automatic Staff Pricing (2026-10-10)
+
+Owner-approved implementation of P1.1 based on the P1 read-only audit. **Scope: backend only** — `server/` + `docs/`. No Expo UI change, no protected directory touched (`client/`, `AdminDashbord/`, `print-service/`, `react native frontend/`), no data migration/reseed/schema-destructive step, no new dependencies, no production DB writes.
+
+### C.0.1 Files changed and purpose
+
+| File | Purpose |
+|---|---|
+| `server/utils/menuUtils.js` | Added `computeStaffPrice(price)` (single source of truth for 60% pricing); removed `staffPrice` from `ITEM_WRITABLE_FIELDS` and from `validateItemInput` (client `staffPrice` is now ignored); `buildAuthoritativeOrder` derives the STAFF unit price from the customer `Item.price` and never reads the legacy stored `staffPrice`. |
+| `server/models/Item.js` | `staffPrice` is no longer `required` on new documents. The legacy field stays in the schema (documented as legacy-only) so pre-P1.1 records remain readable and their unrelated fields editable; no data is deleted or migrated. |
+| `server/controllers/itemController.js` | `GET /api/items?audience=staff` now returns the **derived** `staffPrice` (60% of `price`); customer responses are unchanged (`staffPrice`/`availableForStaff` still projected out). Seed items no longer carry a manual `staffPrice`. |
+| `server/utils/menuUtils.test.js` | Updated existing validation/order tests to the derived contract; added `computeStaffPrice` tests (exact 60%, 2-dp rounding, half-paise boundary, float-dust, null-safe) and legacy-stored-value-ignored tests. |
+| `server/tests/items.api.test.js` | **New** — API tests against a dedicated `gola_items_test` DB: create without `staffPrice` succeeds and stores none; submitted `staffPrice` is ignored; customer listing keeps customer pricing and never exposes staff fields; staff listing exposes derived 60% prices; legacy documents stay readable and show the derived value while the stored legacy field is preserved on unrelated-field updates; staff availability fields survive. |
+
+No other server file references the legacy stored value for pricing (`grep staffPrice` in `server/` shows only the model field, the derived exposure, and tests).
+
+### C.0.2 Exact pricing formula and rounding
+
+`staffPrice = round(customerPrice × 0.60, 2)` computed as `Math.round(price * 0.6 * 100) / 100` (`server/utils/menuUtils.js:59-65`). `Math.round` rounds half up in paise, so a half-paise product rounds up to the nearest paise; float dust is eliminated. Verified examples: ₹100 → ₹60.00; ₹99 → ₹59.40; ₹99.99 → ₹59.99; boundary ₹0.075 → 4.5 paise → ₹0.05; ₹199.99 → ₹119.99. The same helper is used by both the order builder and the staff menu listing, so orders and menu display cannot diverge. A `price` that is missing/negative/non-finite yields `null` (STAFF order rejected with "Price is not configured…" just like a CUSTOMER order with no price).
+
+### C.0.3 Tests executed and actual results
+
+Run against the local, dedicated test databases only (`gola_billing_test`, `gola_inventory_test`, `gola_items_test`); no production write endpoints used.
+
+- `server/ npm test` (`node --test "utils/*.test.js" "tests/*.test.js"`) → **101/101 pass** (90 baseline + 11 new). Failure count 0. Covers: `computeStaffPrice` exactness/rounding/legacy-ignore; CUSTOMER price unchanged; STAFF order derived 60%; items API create/ignore/legacy/staff-list; `buildAuthoritativeOrder` availability/category/tamper guards; coupons (`PERCENT`/`FLAT`/min-order/cap); bill snapshot paise math; billing/inventory API suites.
+
+### C.0.4 Confirmation: customer pricing and legacy records remain compatible
+
+- CUSTOMER ordering is untouched: `buildAuthoritativeOrder`'s CUSTOMER branch and `GET /api/items` (customer) are byte-for-byte the same logic as before (`menuUtils.js` CUSTOMER branch; `itemController.js` customer projection). Customer responses never expose `staffPrice`/`availableForStaff`.
+- Existing orders are denormalized snapshots (`Order.items[].price`, `Order.totalAmount`) — already-written orders are unaffected by this change.
+- Existing bills are immutable paise snapshots (`Bill.orders[].totalPaise`, `lines[].pricePaise`) — unaffected. New bills keep using the authoritative prices saved on their orders (`computeBillTotals` unchanged).
+- Legacy documents that store `staffPrice` still load and edit (e.g., updating `description` preserves the stored field); staff listing/orders use the **derived** value instead.
+
+### C.0.5 Failures, limitations, unresolved risks
+
+- No test failures. One test authoring mistake (expected 60 for a ₹200 legacy item) was fixed before recording results.
+- Legacy `staffPrice` values remain in existing documents but are inert (never read for pricing). A later data-cleaning step could drop the field; intentionally deferred this phase.
+- Items without a customer `price` have no staff price either (it is fully derived) — the STAFF order path now rejects them with the existing "Price is not configured" message.
+- Deploy required: the change reaches production only after the Render deploy; until then staff listings/orders on the live server still use the old manual-field behavior.
+- Consistency with prior documented behavior: coupon order-of-ops and bill snapshot rules are unchanged by design (verify/don't-invent).
+
+### C.0.6 Current status
+
+| Item | Status |
+|---|---|
+| P1.1 Backend automatic staff pricing | `IMPLEMENTED — BACKEND COMPLETE, AWAITING OWNER REVIEW` (101/101 server tests green) |
+| P1.2–P1.5 (Expo UI: remove manual staff-price field, derived display, Customer/Staff selector, direct-bill path) | NOT STARTED — explicitly out of scope for P1.1; begins only after owner approval |
+| Production deployment (Render/Atlas) | NOT DEPLOYED — requires owner-initiated deploy (also pending: Phase 2B `/api/billing`) |
+| Owner testing | PENDING — smoke test menu + staff order pricing post-deploy |
+
+Stop: P1.2–P1.5 Expo work must not begin automatically.

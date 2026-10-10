@@ -8,6 +8,7 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const itemRoutes = require('./routes/itemRoutes');
 const orderRoutes = require('./routes/orderRoutes');
+const billingRoutes = require('./routes/billingRoutes');
 const adminAuthRoutes = require('./routes/adminAuth');
 
 dotenv.config();
@@ -95,6 +96,7 @@ const path = require('path');
 app.use('/api/auth', authRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/billing', billingRoutes);
 app.use('/api/coupons', require('./routes/couponRoutes'));
 app.use('/api/feedback', require('./routes/feedbackRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));

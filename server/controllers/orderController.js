@@ -1,10 +1,17 @@
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
 const Order = require('../models/Order');
 const Item = require('../models/Item');
 const Category = require('../models/Category');
 const Coupon = require('../models/Coupon');
 const SessionManager = require('../utils/SessionManager');
+const OrderLock = require('../models/OrderLock');
 const { generateOrderId } = require('../utils/orderIdGenerator');
+const {
+    canonicalizeStatus,
+    isCancelTransition,
+    isChangeTransition,
+} = require('../utils/billingUtils');
 const {
     buildAuthoritativeOrder,
     normalizeAudience,
@@ -12,6 +19,53 @@ const {
     toFiniteNumber,
 } = require('../utils/menuUtils');
 const { computeCouponDiscount } = require('../utils/couponUtils');
+
+// Phase 2B (D3): an order covered by a non-void bill must NOT be cancelled or
+// changed. Billing holds a BILL order-lock per captured order; transitions to
+// CANCELLED/CHANGED must first acquire the unique TRANSITION lock (mutex with
+// the BILL locks via the partial unique index on OrderLock.orderId). On success
+// returns { ok:true, release } - the caller MUST call release() when done.
+async function guardBilledTransition(orderId, newStatus) {
+    const canonical = canonicalizeStatus(newStatus);
+    const needsGuard = canonical === 'CANCELLED' || canonical === 'CHANGED';
+    if (!needsGuard) {
+        return { ok: true, release: null };
+    }
+    const result = await OrderLock.acquireTransitionLock({
+        orderId,
+        requestId: randomUUID(),
+        newStatus: canonical,
+    });
+    if (result.ok) {
+        return {
+            ok: true,
+            release: function () {
+                return OrderLock.release(orderId);
+            },
+        };
+    }
+    if (result.code === 'ORDER_ALREADY_BILLED') {
+        return {
+            ok: false,
+            status: 409,
+            body: {
+                error: 'ORDER_ALREADY_BILLED',
+                message:
+                    `Cannot ${canonical === 'CANCELLED' ? 'cancel' : 'change'} an order that is on a bill. ` +
+                    'Void the bill first if this change is required.',
+                billNumber: result.bill && result.bill.billNumber,
+            },
+        };
+    }
+    return {
+        ok: false,
+        status: 409,
+        body: {
+            error: 'IN_PROGRESS',
+            message: 'This order is being updated or billed right now; retry.',
+        },
+    };
+}
 
 
 // @desc    Create new order
@@ -214,15 +268,27 @@ const updateOrderStatus = async (req, res) => {
             }
         }
 
+        // Phase 2B (D3): block cancel/change of orders already on a bill.
+        const guardResult = await guardBilledTransition(req.params.id, status);
+        if (!guardResult.ok) {
+            return res.status(guardResult.status).json(guardResult.body);
+        }
+
         // Update ONLY this specific order
         const updates = {};
         if (status) updates.status = status;
         if (feedbackStatus) updates.feedbackStatus = feedbackStatus;
 
-        await Order.updateOne(
-            { _id: req.params.id },
-            { $set: updates }
-        );
+        try {
+            await Order.updateOne(
+                { _id: req.params.id },
+                { $set: updates }
+            );
+        } finally {
+            if (guardResult.release) {
+                await guardResult.release();
+            }
+        }
 
         // Fetch all orders in the session for UI update
         const sessionOrders = await Order.find({ sessionId: order.sessionId })
@@ -641,6 +707,12 @@ const updateOrder = async (req, res) => {
             });
         }
 
+        // Phase 2B (D3): /update always sets CHANGED -> block billed orders.
+        const guardResult = await guardBilledTransition(req.params.id, 'CHANGED');
+        if (!guardResult.ok) {
+            return res.status(guardResult.status).json(guardResult.body);
+        }
+
         console.log('📝 Modifying order:', {
             orderId: order.orderId,
             currentStatus: order.status,
@@ -669,7 +741,13 @@ const updateOrder = async (req, res) => {
         // Set status to CHANGED (requires re-acceptance)
         order.status = 'CHANGED';
 
-        await order.save();
+        try {
+            await order.save();
+        } finally {
+            if (guardResult.release) {
+                await guardResult.release();
+            }
+        }
 
         console.log('✅ Order modified:', {
             orderId: order.orderId,

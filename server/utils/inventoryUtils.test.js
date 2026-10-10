@@ -9,6 +9,9 @@ const {
     isValidUnit,
     round2,
     computeUsagePercent,
+    computeRemainingPercent,
+    isUsageAlert,
+    USAGE_ALERT_THRESHOLD,
     computeSuggestedQty,
     computeStockStatus,
     needToBuyFromStatus,
@@ -40,6 +43,25 @@ test('computeUsagePercent clamps and handles empty baseline', () => {
     assert.equal(computeUsagePercent(50, 0), 100);
     assert.equal(computeUsagePercent(50, 80), 0);
     assert.equal(computeUsagePercent(0, 0), null);
+});
+
+test('computeRemainingPercent is the complement of usage and null-safe', () => {
+    assert.equal(computeRemainingPercent(10, 2), 20);
+    assert.equal(computeRemainingPercent(10, 10), 100);
+    assert.equal(computeRemainingPercent(10, 12), 100);
+    assert.equal(computeRemainingPercent(0, 0), null);
+    assert.equal(computeRemainingPercent(10, 2) + computeUsagePercent(10, 2), 100);
+});
+
+test('isUsageAlert fires at >=75% used and never without a baseline', () => {
+    assert.equal(USAGE_ALERT_THRESHOLD, 75);
+    assert.equal(isUsageAlert(10, 2), true);
+    assert.equal(isUsageAlert(10, 2.5), true);
+    assert.equal(isUsageAlert(10, 3), false);
+    assert.equal(isUsageAlert(10, 8), false);
+    assert.equal(isUsageAlert(0, 0), false);
+    assert.equal(isUsageAlert(null, 0), false);
+    assert.equal(isUsageAlert(10, 2, 50), true);
 });
 
 test('computeSuggestedQty floors at zero', () => {
@@ -98,6 +120,34 @@ test('validateMovementInput uses signed quantityDelta for adjustments', () => {
     const out = validateMovementInput({ ingredientId: 'abc', type: 'ADJUSTMENT', quantityDelta: -1.5 });
     assert.deepEqual(out.errors, []);
     assert.equal(movementDelta(out.value), -1.5);
+});
+
+test('validateIngredientInput accepts purchase price and opening cost/note', () => {
+    const good = validateIngredientInput(
+        { name: 'Ghee', unit: 'kg', minimumStockLevel: 1, purchasePrice: '250.5', openingQty: '3', openingUnitCost: '240', openingNote: '  first buy  ', createdBy: 'chef' },
+        { partial: false },
+    );
+    assert.deepEqual(good.errors, []);
+    assert.equal(good.value.purchasePrice, 250.5);
+    assert.equal(good.value.openingQty, 3);
+    assert.equal(good.value.openingUnitCost, 240);
+    assert.equal(good.value.openingNote, 'first buy');
+    assert.equal(good.value.createdBy, 'chef');
+
+    const bad = validateIngredientInput({ name: 'Ghee', unit: 'kg', minimumStockLevel: 1, purchasePrice: -1 }, { partial: false });
+    assert.equal(bad.errors.length, 1);
+});
+
+test('validateMovementInput accepts optional non-negative unitCost', () => {
+    const good = validateMovementInput({ ingredientId: 'abc', type: 'RESTOCK', quantity: 2, unitCost: '99.25' });
+    assert.deepEqual(good.errors, []);
+    assert.equal(good.value.unitCost, 99.25);
+
+    const bad = validateMovementInput({ ingredientId: 'abc', type: 'RESTOCK', quantity: 2, unitCost: -5 });
+    assert.equal(bad.errors.length, 1);
+
+    const where = validateMovementInput({ ingredientId: 'abc', type: 'RESTOCK', quantity: 2, unitCost: 'abc' });
+    assert.equal(where.errors.length, 1);
 });
 
 test('movementDelta signs each type correctly', () => {

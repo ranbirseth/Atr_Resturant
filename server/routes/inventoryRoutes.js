@@ -13,6 +13,8 @@ const {
     getMovements,
     getCycles,
     reconcile,
+    getAnalytics,
+    getAlerts,
 } = require('../controllers/inventoryController');
 
 // NOTE: Intentionally unauthenticated per explicit owner decision. See the
@@ -40,5 +42,8 @@ router.get('/stock/movements', getMovements);
 router.post('/stock/movements', recordMovement);
 router.get('/stock/cycles', getCycles);
 router.post('/stock/reconcile', reconcile);
+
+router.get('/analytics', getAnalytics);
+router.get('/alerts', getAlerts);
 
 module.exports = router;

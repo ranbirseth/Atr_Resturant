@@ -6,6 +6,29 @@ Last updated: 2026-10-10
 
 ---
 
+## Final Polish — Phase 1B: backend fixes
+
+See [Phase 1B report](../audits/README.md). Overall: `IMPLEMENTED — BACKEND COMPLETE, AWAITING OWNER REVIEW`. Tests: `server/npm test` → **59/59 pass** (13→20 unit, 15→20 API).
+
+### Completed
+| # | Item | Evidence |
+|---|---|---|
+| B1 | Purchase price stored: `Ingredient.purchasePrice`, `StockMovement.unitCost` | `server/models/*.js` |
+| B2 | Opening purchase cost/note/`createdBy` captured (no longer hardcoded) | `createIngredient` + `inventoryUtils.js` |
+| B3 | 75%-used alert: `usageAlert` + `remainingPercent` on every stock row | `stockRow`, `isUsageAlert`/`computeRemainingPercent` |
+| B4 | Duplicate concurrent RESTOCK fixed via reserve-first idempotency (`RESERVED`→`COMMITTED`) + full compensation (reopen closed cycle, revert item fields) | `recordMovement` |
+| B5 | `GET /api/inventory/analytics` (additions/consumption/adjustment, per-item, purchase suggestions) | `inventoryController.js`, `inventoryRoutes.js` |
+| B6 | `GET /api/inventory/alerts` (usage/low/out/need-to-buy) | `inventoryController.js`, `inventoryRoutes.js` |
+| B7 | Backend regression tests for all of the above | `utils/inventoryUtils.test.js`, `tests/inventory.api.test.js` |
+
+### Remaining (deferred)
+| # | Item | Notes |
+|---|---|---|
+| B8 | Expo UI: consolidate Inventory+Stock into one `Inventory & Stock` destination; add price/note inputs; consume `usageAlert` | UI phase, not started |
+| B9 | Verify Render production deployment includes inventory routes | `config.js` targets `https://atr-resturant.onrender.com/api` — UNVERIFIED |
+
+---
+
 ## Inventory & Stock (Phase 10)
 
 ### Completed

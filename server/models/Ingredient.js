@@ -34,6 +34,12 @@ const ingredientSchema = new mongoose.Schema({
         min: [0, 'expectedDemand must be greater than or equal to 0'],
         default: 0,
     },
+    // Last/default purchase price per unit (optional; legacy items have none).
+    purchasePrice: {
+        type: Number,
+        min: [0, 'purchasePrice must be greater than or equal to 0'],
+        default: null,
+    },
     isActive: {
         type: Boolean,
         default: true,

@@ -7,6 +7,8 @@ const U = require('../utils/inventoryUtils');
 function stockRow(ingredient, openCycle) {
     const doc = ingredient && ingredient.toObject ? ingredient.toObject() : ingredient;
     const status = U.computeStockStatus(doc.currentQty, doc.minimumStockLevel);
+    const baselineQty = openCycle ? openCycle.baselineQty : null;
+    const usagePercent = openCycle ? U.computeUsagePercent(baselineQty, doc.currentQty) : null;
     return {
         ...doc,
         available: status.available,
@@ -14,8 +16,10 @@ function stockRow(ingredient, openCycle) {
         outOfStock: status.outOfStock,
         needToBuy: U.needToBuyFromStatus(doc.purchaseStatus),
         suggestedQty: U.computeSuggestedQty(doc.minimumStockLevel, doc.expectedDemand, doc.currentQty),
-        baselineQty: openCycle ? openCycle.baselineQty : null,
-        usagePercent: openCycle ? U.computeUsagePercent(openCycle.baselineQty, doc.currentQty) : null,
+        baselineQty,
+        usagePercent,
+        remainingPercent: U.computeRemainingPercent(baselineQty, doc.currentQty),
+        usageAlert: U.isUsageAlert(baselineQty, doc.currentQty),
     };
 }
 
@@ -81,7 +85,13 @@ const createIngredient = async (req, res) => {
         }
 
         const openingQty = value.openingQty || 0;
+        const openingUnitCost = value.openingUnitCost !== undefined ? value.openingUnitCost : (value.purchasePrice !== undefined ? value.purchasePrice : null);
+        const openingNote = value.openingNote;
+        const createdBy = value.createdBy || 'admin';
         delete value.openingQty;
+        delete value.openingUnitCost;
+        delete value.openingNote;
+        delete value.createdBy;
 
         const ingredient = await Ingredient.create({
             ...value,
@@ -107,9 +117,10 @@ const createIngredient = async (req, res) => {
                 quantityDelta: openingQty,
                 unit: ingredient.unit,
                 movementDate: now,
-                note: 'Opening quantity',
+                note: openingNote || 'Opening quantity',
+                unitCost: openingUnitCost,
                 cycleId: cycle._id,
-                createdBy: value.createdBy || 'admin',
+                createdBy,
             });
             ingredient.latestCycleId = cycle._id;
             await ingredient.save();
@@ -139,6 +150,9 @@ const updateIngredient = async (req, res) => {
         }
 
         delete value.openingQty;
+        delete value.openingUnitCost;
+        delete value.openingNote;
+        delete value.createdBy;
 
         if (value.name !== undefined) {
             const key = U.nameKey(value.name);
@@ -251,6 +265,12 @@ const getStock = async (req, res) => {
 // @route   POST /api/inventory/stock/movements
 // Idempotent when an idempotencyKey is supplied; consumes atomically and never
 // drives the balance below zero.
+//
+// Idempotency is enforced by an insert-first reservation: a StockMovement with
+// status RESERVED is created before any balance/cycle mutation, so a duplicate
+// concurrent request fails on the unique idempotency index BEFORE it can touch
+// the balance or cycle state. The reservation is then committed (status
+// COMMITTED + cycleId) after the writes succeed, or deleted on failure.
 const recordMovement = async (req, res) => {
     try {
         const { value, errors } = U.validateMovementInput(req.body);
@@ -273,18 +293,48 @@ const recordMovement = async (req, res) => {
             return res.status(400).json({ message: 'Cannot record stock movements for an inactive item' });
         }
 
-        if (value.idempotencyKey) {
-            const existing = await StockMovement.findOne({ idempotencyKey: value.idempotencyKey });
-            if (existing) {
-                return res.status(200).json({ alreadyProcessed: true, movement: existing });
-            }
-        }
-
         const delta = U.movementDelta(value);
         if (delta === 0) {
             return res.status(400).json({ message: 'Movement has no effect on stock' });
         }
         const magnitude = Math.abs(delta);
+        const movementDate = value.movementDate || new Date();
+
+        const movementFields = {
+            ingredientId: ingredient._id,
+            type: value.type,
+            quantityDelta: U.round2(delta),
+            unit: ingredient.unit,
+            movementDate,
+            note: value.note || '',
+            unitCost: value.unitCost !== undefined ? value.unitCost : null,
+            createdBy: value.createdBy || 'admin',
+        };
+
+        // Reserve the idempotency key (if any) BEFORE mutating balance/cycles.
+        let reservation = null;
+        if (value.idempotencyKey) {
+            try {
+                reservation = await StockMovement.create({
+                    ...movementFields,
+                    idempotencyKey: value.idempotencyKey,
+                    cycleId: null,
+                    status: 'RESERVED',
+                });
+            } catch (reserveError) {
+                if (reserveError && reserveError.code === 11000) {
+                    const existing = await StockMovement.findOne({ idempotencyKey: value.idempotencyKey });
+                    if (existing && existing.status !== 'RESERVED') {
+                        return res.status(200).json({ alreadyProcessed: true, movement: existing });
+                    }
+                    return res.status(409).json({
+                        error: 'IN_PROGRESS',
+                        message: 'A movement with this idempotency key is already being processed',
+                    });
+                }
+                throw reserveError;
+            }
+        }
 
         const balanceFilter = { _id: ingredient._id };
         if (delta < 0) {
@@ -298,6 +348,9 @@ const recordMovement = async (req, res) => {
         );
 
         if (!updated) {
+            if (reservation) {
+                await StockMovement.deleteOne({ _id: reservation._id, status: 'RESERVED' });
+            }
             const fresh = await Ingredient.findById(ingredient._id);
             const availableQty = fresh ? U.round2(fresh.currentQty) : 0;
             return res.status(409).json({
@@ -308,22 +361,23 @@ const recordMovement = async (req, res) => {
             });
         }
 
-        const movementDate = value.movementDate || new Date();
         const priorPurchaseStatus = ingredient.purchaseStatus;
+        const priorLatestCycleId = ingredient.latestCycleId || null;
         let cycleId = null;
         let newCycle = null;
+        let priorOpenCycle = null;
 
         try {
             if (value.type === 'RESTOCK' || value.type === 'OPENING') {
                 const currentBefore = U.round2(updated.currentQty - value.quantity);
                 const carriedOver = Math.max(0, currentBefore);
 
-                const openCycle = await StockCycle.findOne({ ingredientId: ingredient._id, status: 'OPEN' }).sort({ cycleNumber: -1 });
-                if (openCycle) {
-                    openCycle.status = 'CLOSED';
-                    openCycle.closedAt = movementDate;
-                    openCycle.finalUsagePercent = U.computeUsagePercent(openCycle.baselineQty, currentBefore);
-                    await openCycle.save();
+                priorOpenCycle = await StockCycle.findOne({ ingredientId: ingredient._id, status: 'OPEN' }).sort({ cycleNumber: -1 });
+                if (priorOpenCycle) {
+                    priorOpenCycle.status = 'CLOSED';
+                    priorOpenCycle.closedAt = movementDate;
+                    priorOpenCycle.finalUsagePercent = U.computeUsagePercent(priorOpenCycle.baselineQty, currentBefore);
+                    await priorOpenCycle.save();
                 }
 
                 const lastCycle = await StockCycle.findOne({ ingredientId: ingredient._id }).sort({ cycleNumber: -1 });
@@ -350,17 +404,23 @@ const recordMovement = async (req, res) => {
                 if (openCycle) cycleId = openCycle._id;
             }
 
-            const movement = await StockMovement.create({
-                ingredientId: ingredient._id,
-                type: value.type,
-                quantityDelta: U.round2(delta),
-                unit: ingredient.unit,
-                movementDate,
-                note: value.note || '',
-                cycleId,
-                idempotencyKey: value.idempotencyKey,
-                createdBy: value.createdBy || 'admin',
-            });
+            let movement;
+            if (reservation) {
+                movement = await StockMovement.findOneAndUpdate(
+                    { _id: reservation._id, status: 'RESERVED' },
+                    { $set: { cycleId, status: 'COMMITTED' } },
+                    { new: true },
+                );
+                if (!movement) {
+                    throw new Error('Idempotency reservation was lost before commit');
+                }
+            } else {
+                movement = await StockMovement.create({
+                    ...movementFields,
+                    cycleId,
+                    status: 'COMMITTED',
+                });
+            }
 
             const fresh = await Ingredient.findById(ingredient._id);
             const activeCycle = cycleId ? await StockCycle.findById(cycleId) : null;
@@ -370,10 +430,23 @@ const recordMovement = async (req, res) => {
                 cycle: activeCycle,
             });
         } catch (writeError) {
-            // Compensate the balance change if the ledger write failed.
+            // Compensate every mutation so a failed write leaves no drift.
             await Ingredient.updateOne({ _id: ingredient._id }, { $inc: { currentQty: U.round2(-delta) } });
             if (newCycle) {
                 await StockCycle.deleteOne({ _id: newCycle._id });
+                await Ingredient.updateOne(
+                    { _id: ingredient._id },
+                    { $set: { latestCycleId: priorLatestCycleId, purchaseStatus: priorPurchaseStatus } },
+                );
+            }
+            if (priorOpenCycle) {
+                await StockCycle.updateOne(
+                    { _id: priorOpenCycle._id },
+                    { $set: { status: 'OPEN', closedAt: null, finalUsagePercent: null } },
+                );
+            }
+            if (reservation) {
+                await StockMovement.deleteOne({ _id: reservation._id, status: 'RESERVED' });
             }
             if (writeError && writeError.code === 11000 && value.idempotencyKey) {
                 const existing = await StockMovement.findOne({ idempotencyKey: value.idempotencyKey });
@@ -390,7 +463,8 @@ const recordMovement = async (req, res) => {
 // @route   GET /api/inventory/stock/movements?ingredientId=&type=&from=&to=&limit=
 const getMovements = async (req, res) => {
     try {
-        const filter = {};
+        // Hide uncommitted idempotency reservations (and legacy docs lack status).
+        const filter = { status: { $ne: 'RESERVED' } };
         if (req.query.ingredientId) filter.ingredientId = req.query.ingredientId;
         if (req.query.type) filter.type = String(req.query.type).toUpperCase();
 
@@ -434,6 +508,7 @@ const reconcile = async (req, res) => {
         const fix = !!(req.body && req.body.fix);
         const ingredients = await Ingredient.find({});
         const aggregate = await StockMovement.aggregate([
+            { $match: { status: { $ne: 'RESERVED' } } },
             { $group: { _id: '$ingredientId', sum: { $sum: '$quantityDelta' } } },
         ]);
         const ledgerSums = new Map(aggregate.map((row) => [String(row._id), U.round2(row.sum)]));
@@ -463,6 +538,149 @@ const reconcile = async (req, res) => {
     }
 };
 
+// @desc    Inventory analytics: additions / consumption / adjustment totals and
+//          per-item summaries + purchase suggestions, aggregated once from the
+//          append-only ledger (no formula duplicated from inventoryUtils).
+// @route   GET /api/inventory/analytics?from=&to=
+const getAnalytics = async (req, res) => {
+    try {
+        const match = { status: { $ne: 'RESERVED' } };
+        const range = {};
+        if (req.query.from) {
+            const from = new Date(req.query.from);
+            if (Number.isNaN(from.getTime())) {
+                return res.status(400).json({ message: 'from must be a valid date' });
+            }
+            range.$gte = from;
+        }
+        if (req.query.to) {
+            const to = new Date(req.query.to);
+            if (Number.isNaN(to.getTime())) {
+                return res.status(400).json({ message: 'to must be a valid date' });
+            }
+            to.setHours(23, 59, 59, 999);
+            range.$lte = to;
+        }
+        if (Object.keys(range).length > 0) {
+            match.movementDate = range;
+        }
+
+        const [ingredients, openCycles, grouped] = await Promise.all([
+            Ingredient.find({}).sort({ name: 1 }),
+            StockCycle.find({ status: 'OPEN' }),
+            StockMovement.aggregate([
+                { $match: match },
+                {
+                    $group: {
+                        _id: { ingredientId: '$ingredientId', type: '$type' },
+                        sum: { $sum: '$quantityDelta' },
+                        count: { $sum: 1 },
+                    },
+                },
+            ]),
+        ]);
+
+        const openByIngredient = new Map(openCycles.map((cycle) => [String(cycle.ingredientId), cycle]));
+        const perIngredient = new Map();
+        let totalAdditions = 0;
+        let totalConsumption = 0;
+        let totalAdjustment = 0;
+        let movementCount = 0;
+
+        for (const row of grouped) {
+            const id = String(row._id.ingredientId);
+            const type = row._id.type;
+            const sum = U.round2(row.sum || 0);
+            movementCount += row.count || 0;
+            const entry = perIngredient.get(id) || { additions: 0, consumption: 0, adjustment: 0 };
+            if (type === 'OPENING' || type === 'RESTOCK') {
+                const added = Math.max(0, sum);
+                entry.additions = U.round2(entry.additions + added);
+                totalAdditions = U.round2(totalAdditions + added);
+            } else if (type === 'CONSUMPTION') {
+                const consumed = U.round2(-sum);
+                entry.consumption = U.round2(entry.consumption + consumed);
+                totalConsumption = U.round2(totalConsumption + consumed);
+            } else if (type === 'ADJUSTMENT') {
+                entry.adjustment = U.round2(entry.adjustment + sum);
+                totalAdjustment = U.round2(totalAdjustment + sum);
+            }
+            perIngredient.set(id, entry);
+        }
+
+        const items = ingredients.map((ingredient) => {
+            const id = String(ingredient._id);
+            const stats = perIngredient.get(id) || { additions: 0, consumption: 0, adjustment: 0 };
+            const openCycle = openByIngredient.get(id);
+            const baselineQty = openCycle ? openCycle.baselineQty : null;
+            return {
+                ingredientId: ingredient._id,
+                name: ingredient.name,
+                unit: ingredient.unit,
+                currentQty: U.round2(ingredient.currentQty),
+                minimumStockLevel: ingredient.minimumStockLevel,
+                expectedDemand: ingredient.expectedDemand,
+                purchasePrice: ingredient.purchasePrice,
+                purchaseStatus: ingredient.purchaseStatus,
+                needToBuy: U.needToBuyFromStatus(ingredient.purchaseStatus),
+                baselineQty,
+                usagePercent: U.computeUsagePercent(baselineQty, ingredient.currentQty),
+                remainingPercent: U.computeRemainingPercent(baselineQty, ingredient.currentQty),
+                usageAlert: U.isUsageAlert(baselineQty, ingredient.currentQty),
+                additions: stats.additions,
+                consumption: stats.consumption,
+                adjustment: stats.adjustment,
+                netChange: U.round2(stats.additions + stats.adjustment - stats.consumption),
+                suggestedQty: U.computeSuggestedQty(ingredient.minimumStockLevel, ingredient.expectedDemand, ingredient.currentQty),
+            };
+        });
+
+        const purchaseSuggestions = items
+            .filter((item) => item.suggestedQty > 0)
+            .map((item) => ({
+                ingredientId: item.ingredientId,
+                name: item.name,
+                unit: item.unit,
+                currentQty: item.currentQty,
+                minimumStockLevel: item.minimumStockLevel,
+                expectedDemand: item.expectedDemand,
+                purchaseStatus: item.purchaseStatus,
+                suggestedQty: item.suggestedQty,
+            }));
+
+        res.json({
+            from: range.$gte || null,
+            to: range.$lte || null,
+            totals: {
+                additions: totalAdditions,
+                consumption: totalConsumption,
+                adjustment: totalAdjustment,
+                netChange: U.round2(totalAdditions + totalAdjustment - totalConsumption),
+                movementCount,
+            },
+            items,
+            purchaseSuggestions,
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Items needing attention: 75%-used cycle, low/out of stock, or
+//          flagged for purchase. Reuses stockRow so no derived math is repeated.
+// @route   GET /api/inventory/alerts
+const getAlerts = async (req, res) => {
+    try {
+        const ingredients = await Ingredient.find({}).sort({ name: 1 });
+        const openCycles = await StockCycle.find({ status: 'OPEN' });
+        const byIngredient = new Map(openCycles.map((cycle) => [String(cycle.ingredientId), cycle]));
+        const rows = ingredients.map((item) => stockRow(item, byIngredient.get(String(item._id))));
+        res.json(rows.filter((row) => row.usageAlert || row.lowStock || row.outOfStock || row.needToBuy));
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     getUnits,
     getIngredients,
@@ -476,4 +694,6 @@ module.exports = {
     getMovements,
     getCycles,
     reconcile,
+    getAnalytics,
+    getAlerts,
 };

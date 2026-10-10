@@ -35,6 +35,22 @@ const stockMovementSchema = new mongoose.Schema({
         type: String,
         default: '',
     },
+    // Per-unit purchase price for OPENING/RESTOCK (optional; legacy movements
+    // and non-purchase types have none).
+    unitCost: {
+        type: Number,
+        min: [0, 'unitCost must be greater than or equal to 0'],
+        default: null,
+    },
+    // Lifecycle: a movement is created RESERVED (for idempotency) and committed
+    // to COMMITTED once its balance + cycle writes succeed. Legacy documents do
+    // not carry the field and are treated as COMMITTED.
+    status: {
+        type: String,
+        enum: ['RESERVED', 'COMMITTED'],
+        default: 'COMMITTED',
+        index: true,
+    },
     cycleId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'StockCycle',

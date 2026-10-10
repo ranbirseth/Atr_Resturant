@@ -15,11 +15,16 @@ const PURCHASE_STATUSES = ['NONE', 'NEEDED', 'ORDERED', 'COMPLETED'];
 
 const STOCK_FILTERS = ['all', 'available', 'low', 'out', 'need-to-buy'];
 
+// A cycle raises a usage alert once this percent of its baseline has been used
+// (i.e. <= 25% of the baseline remains).
+const USAGE_ALERT_THRESHOLD = 75;
+
 const INGREDIENT_WRITABLE_FIELDS = [
     'name',
     'unit',
     'minimumStockLevel',
     'expectedDemand',
+    'purchasePrice',
     'isActive',
 ];
 
@@ -119,6 +124,25 @@ function computeUsagePercent(baselineQty, currentQty) {
     return round2(Math.max(0, Math.min(100, percent)));
 }
 
+// Remaining% = current / baseline * 100, clamped 0..100. Returns null when
+// there is no meaningful baseline (<= 0). Complement of computeUsagePercent.
+function computeRemainingPercent(baselineQty, currentQty) {
+    const baseline = toFiniteNumber(baselineQty);
+    if (baseline === null || baseline <= 0) {
+        return null;
+    }
+    const current = toFiniteNumber(currentQty);
+    const safeCurrent = current === null ? baseline : current;
+    return round2(Math.max(0, Math.min(100, (safeCurrent / baseline) * 100)));
+}
+
+// True when a cycle has consumed at least `thresholdPercent` of its baseline.
+// Null-safe: no baseline (<= 0) never raises an alert.
+function isUsageAlert(baselineQty, currentQty, thresholdPercent = USAGE_ALERT_THRESHOLD) {
+    const percent = computeUsagePercent(baselineQty, currentQty);
+    return percent !== null && percent >= thresholdPercent;
+}
+
 // How much to buy to reach minimumStockLevel + expectedDemand, floored at 0.
 function computeSuggestedQty(minimumStockLevel, expectedDemand, currentQty) {
     const min = toNonNegativeNumber(minimumStockLevel) || 0;
@@ -179,6 +203,12 @@ function validateIngredientInput(body, options = {}) {
         else value.expectedDemand = demand;
     }
 
+    if (src.purchasePrice !== undefined && src.purchasePrice !== null && String(src.purchasePrice).trim() !== '') {
+        const price = toNonNegativeNumber(src.purchasePrice);
+        if (price === null) errors.push('Purchase price must be a number greater than or equal to 0');
+        else value.purchasePrice = price;
+    }
+
     if (src.isActive !== undefined) {
         const active = toBoolean(src.isActive);
         if (active === undefined) errors.push('isActive must be a boolean');
@@ -190,6 +220,21 @@ function validateIngredientInput(body, options = {}) {
         const opening = toNonNegativeNumber(src.openingQty);
         if (opening === null) errors.push('Opening quantity must be a number greater than or equal to 0');
         else value.openingQty = opening;
+    }
+
+    // Opening cost/note are only honoured on create (handled by the controller).
+    if (src.openingUnitCost !== undefined && src.openingUnitCost !== null && String(src.openingUnitCost).trim() !== '') {
+        const cost = toNonNegativeNumber(src.openingUnitCost);
+        if (cost === null) errors.push('Opening unit cost must be a number greater than or equal to 0');
+        else value.openingUnitCost = cost;
+    }
+
+    if (src.openingNote !== undefined) {
+        value.openingNote = typeof src.openingNote === 'string' ? src.openingNote.trim() : String(src.openingNote);
+    }
+
+    if (src.createdBy !== undefined && src.createdBy !== null && String(src.createdBy).trim() !== '') {
+        value.createdBy = String(src.createdBy).trim();
     }
 
     return { errors, value };
@@ -245,6 +290,12 @@ function validateMovementInput(body) {
 
     if (src.note !== undefined) {
         value.note = typeof src.note === 'string' ? src.note.trim() : String(src.note);
+    }
+
+    if (src.unitCost !== undefined && src.unitCost !== null && String(src.unitCost).trim() !== '') {
+        const cost = toNonNegativeNumber(src.unitCost);
+        if (cost === null) errors.push('unitCost must be a number greater than or equal to 0');
+        else value.unitCost = cost;
     }
 
     if (src.idempotencyKey !== undefined && src.idempotencyKey !== null && String(src.idempotencyKey).trim() !== '') {
@@ -306,6 +357,7 @@ module.exports = {
     PURCHASE_STATUSES,
     STOCK_FILTERS,
     INGREDIENT_WRITABLE_FIELDS,
+    USAGE_ALERT_THRESHOLD,
     toFiniteNumber,
     toNonNegativeNumber,
     toPositiveNumber,
@@ -318,6 +370,8 @@ module.exports = {
     isValidPurchaseStatus,
     round2,
     computeUsagePercent,
+    computeRemainingPercent,
+    isUsageAlert,
     computeSuggestedQty,
     computeStockStatus,
     needToBuyFromStatus,

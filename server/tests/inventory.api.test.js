@@ -49,6 +49,9 @@ async function createItem(payload) {
         minimumStockLevel: payload.minimumStockLevel ?? 0,
         expectedDemand: payload.expectedDemand ?? 0,
         openingQty: payload.openingQty ?? 0,
+        purchasePrice: payload.purchasePrice,
+        openingUnitCost: payload.openingUnitCost,
+        openingNote: payload.openingNote,
     });
     assert.equal(res.status, 201, JSON.stringify(res.data));
     return res.data;
@@ -277,3 +280,148 @@ test('stock list filters by stock status', async () => {
     const low = await api('GET', `/stock?filter=low&query=${encodeURIComponent(name)}`);
     assert.equal(low.data.length, 0);
 });
+
+test('purchase price and opening cost/note are captured and persisted', async () => {
+    const item = await createItem({
+        name: `Costed ${Date.now()}`,
+        unit: 'kg',
+        minimumStockLevel: 1,
+        openingQty: 4,
+        purchasePrice: 120,
+        openingUnitCost: 110,
+        openingNote: '  first delivery  ',
+    });
+    assert.equal(item.purchasePrice, 120);
+
+    const opening = await api('GET', `/stock/movements?ingredientId=${item._id}&type=OPENING`);
+    assert.equal(opening.data.length, 1);
+    assert.equal(opening.data[0].unitCost, 110);
+    assert.equal(opening.data[0].note, 'first delivery');
+
+    const restock = await api('POST', '/stock/movements', {
+        ingredientId: item._id,
+        type: 'RESTOCK',
+        quantity: 6,
+        unitCost: 130,
+        note: 'second delivery',
+    });
+    assert.equal(restock.status, 201, JSON.stringify(restock.data));
+    assert.equal(restock.data.movement.unitCost, 130);
+    assert.equal(restock.data.movement.note, 'second delivery');
+
+    const movements = await api('GET', `/stock/movements?ingredientId=${item._id}&type=RESTOCK`);
+    assert.equal(movements.data.length, 1);
+    assert.equal(movements.data[0].unitCost, 130);
+
+    const bad = await api('POST', '/stock/movements', {
+        ingredientId: item._id,
+        type: 'RESTOCK',
+        quantity: 1,
+        unitCost: -3,
+    });
+    assert.equal(bad.status, 400);
+});
+
+test('75%-used cycle raises usageAlert and remainingPercent', async () => {
+    const item = await createItem({ name: `Alert ${Date.now()}`, unit: 'kg', minimumStockLevel: 0, openingQty: 10 });
+    assert.equal(item.usageAlert, false);
+    assert.equal(item.remainingPercent, 100);
+
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 2 });
+    const at20 = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(at20.data.usagePercent, 20);
+    assert.equal(at20.data.remainingPercent, 80);
+    assert.equal(at20.data.usageAlert, false);
+
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 6 });
+    const at80 = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(at80.data.usagePercent, 80);
+    assert.equal(at80.data.remainingPercent, 20);
+    assert.equal(at80.data.usageAlert, true);
+
+    // Restock resets the cycle usage (carry-over included) -> alert clears.
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'RESTOCK', quantity: 5 });
+    const afterRestock = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(afterRestock.data.usageAlert, false);
+
+    const alerts = await api('GET', '/alerts');
+    assert.equal(alerts.status, 200);
+    assert.ok(Array.isArray(alerts.data));
+});
+
+test('concurrent duplicate RESTOCK with one key never corrupts cycles or balance', async () => {
+    const item = await createItem({ name: `DupRestock ${Date.now()}`, unit: 'kg', minimumStockLevel: 0, openingQty: 10 });
+    const key = `dup-restock-${item._id}`;
+
+    const [a, b] = await Promise.all([
+        api('POST', '/stock/movements', { ingredientId: item._id, type: 'RESTOCK', quantity: 5, idempotencyKey: key }),
+        api('POST', '/stock/movements', { ingredientId: item._id, type: 'RESTOCK', quantity: 5, idempotencyKey: key }),
+    ]);
+
+    const created = [a, b].filter((r) => r.status === 201);
+    const other = [a, b].find((r) => r.status !== 201);
+    assert.equal(created.length, 1, `exactly one request creates the movement (${a.status}/${b.status})`);
+    // The duplicate is either acknowledged (200 alreadyProcessed) or rejected as
+    // still-in-progress (409) — never silently double-applied.
+    assert.ok([200, 409].includes(other.status), `duplicate returned ${other.status}`);
+
+    const after = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(after.data.currentQty, 15, 'balance incremented exactly once');
+    assert.equal(after.data.purchaseStatus, 'NONE', 'no spurious COMPLETED status');
+
+    const restocks = await api('GET', `/stock/movements?ingredientId=${item._id}&type=RESTOCK`);
+    assert.equal(restocks.data.length, 1, 'exactly one RESTOCK movement persists');
+
+    const cycles = await api('GET', `/stock/cycles?ingredientId=${item._id}`);
+    const open = cycles.data.filter((c) => c.status === 'OPEN');
+    const closed = cycles.data.filter((c) => c.status === 'CLOSED');
+    assert.equal(open.length, 1, 'exactly one open cycle remains');
+    assert.equal(closed.length, 1, 'the opening cycle is closed exactly once');
+    assert.equal(open[0].baselineQty, 15);
+
+    const recon = await api('POST', '/stock/reconcile', {});
+    const mine = recon.data.mismatches.filter((m) => String(m.ingredientId) === String(item._id));
+    assert.equal(mine.length, 0, JSON.stringify(mine));
+});
+
+test('analytics aggregates the ledger and suggests purchases', async () => {
+    const name = `Analytics ${Date.now()}`;
+    const item = await createItem({ name, unit: 'kg', minimumStockLevel: 5, expectedDemand: 8, openingQty: 10 });
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 4 });
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'RESTOCK', quantity: 5 });
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'ADJUSTMENT', quantityDelta: -1 });
+
+    const res = await api('GET', '/analytics');
+    assert.equal(res.status, 200);
+
+    const row = res.data.items.find((i) => String(i.ingredientId) === String(item._id));
+    assert.ok(row, 'item present in analytics');
+    assert.equal(row.currentQty, 10);
+    assert.equal(row.additions, 15);
+    assert.equal(row.consumption, 4);
+    assert.equal(row.adjustment, -1);
+    assert.equal(row.netChange, 10);
+    assert.equal(row.suggestedQty, 3);
+    assert.ok(res.data.purchaseSuggestions.some((s) => String(s.ingredientId) === String(item._id)));
+
+    const future = await api('GET', '/analytics?from=2099-01-01&to=2099-12-31');
+    assert.equal(future.data.totals.additions, 0);
+    assert.equal(future.data.totals.consumption, 0);
+    assert.equal(future.data.totals.movementCount, 0);
+
+    const bad = await api('GET', '/analytics?from=not-a-date');
+    assert.equal(bad.status, 400);
+});
+
+test('alerts endpoint lists items with usage/low/out/need-to-buy flags', async () => {
+    const name = `AlertList ${Date.now()}`;
+    const item = await createItem({ name, unit: 'kg', minimumStockLevel: 0, openingQty: 10 });
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 8 });
+
+    const res = await api('GET', '/alerts');
+    assert.equal(res.status, 200);
+    const row = res.data.find((r) => r.name === name);
+    assert.ok(row, 'flagged item appears in alerts');
+    assert.equal(row.usageAlert, true);
+});
+

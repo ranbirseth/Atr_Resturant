@@ -18,8 +18,8 @@ import {
   audiencePrice,
   filterItems,
   formatPrice,
+  formatPriceExact,
   getErrorMessage,
-  hasStaffPrice,
 } from '../../utils/menuUtils';
 import { createItem, deleteItem, updateItem } from '../../api/menuService';
 
@@ -127,7 +127,6 @@ export default function MenuManagement({
   }
 
   function renderCard({ item }) {
-    const staffMissing = !hasStaffPrice(item);
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -149,16 +148,10 @@ export default function MenuManagement({
             <Text style={styles.priceValue}>{formatPrice(audiencePrice(item, 'CUSTOMER'))}</Text>
           </View>
           <View style={styles.priceBlock}>
-            <Text style={styles.priceLabel}>Staff</Text>
-            <Text style={[styles.priceValue, staffMissing && styles.priceMissing]}>
-              {staffMissing ? 'Not set' : formatPrice(audiencePrice(item, 'STAFF'))}
-            </Text>
+            <Text style={styles.priceLabel}>Staff (auto)</Text>
+            <Text style={styles.priceValue}>{formatPriceExact(audiencePrice(item, 'STAFF'))}</Text>
           </View>
         </View>
-
-        {staffMissing ? (
-          <Text style={styles.warning}>Staff price needs to be configured</Text>
-        ) : null}
 
         <View style={styles.availabilityRow}>
           <Text style={[styles.availTag, item.available === false && styles.availOff]}>
@@ -388,15 +381,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: COLORS.text,
-  },
-  priceMissing: {
-    color: COLORS.pending,
-  },
-  warning: {
-    marginTop: SPACING.sm,
-    color: COLORS.pending,
-    fontSize: 12,
-    fontWeight: '700',
   },
   availabilityRow: {
     flexDirection: 'row',

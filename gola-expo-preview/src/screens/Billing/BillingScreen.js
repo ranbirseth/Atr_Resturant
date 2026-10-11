@@ -16,29 +16,36 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import StateView from '../../components/menu/StateView';
 import BillPanel from './BillPanel';
-import BillPreviewModal from './BillPreviewModal';
+import CreatedBillModal from './CreatedBillModal';
 import { getItems } from '../../api/menuService';
-import { validateCoupon } from '../../api/billingService';
+import { createPosBill } from '../../api/billService';
 import { formatPrice, getErrorMessage } from '../../utils/menuUtils';
+import { billingErrorMessage } from '../../utils/billUtils';
 import {
   addItem,
   canGenerateBill,
   cartQuantity,
   clearCart,
-  computePayable,
   decrementItem,
   incrementItem,
   isItemSellable,
   removeItem,
-  sanitizeDiscount,
   cartTotals,
 } from '../../utils/billingUtils';
+import {
+  buildPosPayload,
+  cartForAudience,
+  makeIdempotencyKey,
+  normalizeAudience,
+} from '../../utils/audienceBilling';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 
 const WIDE_MIN_WIDTH = 900;
 
-// POS Billing screen: pick customer menu items, build a bill, and review a local
-// preview. It never creates a backend order or records a payment (see docs).
+// POS Billing screen: pick menu items, choose who the bill is for (Customer or
+// Staff), and create a server-priced bill via POST /api/billing/pos/bills. The
+// audience is mandatory for every new checkout - nothing silently defaults to
+// Customer - and the server remains authoritative for all prices and totals.
 export default function BillingScreen() {
   const { width } = useWindowDimensions();
   const [items, setItems] = useState(null);
@@ -50,13 +57,16 @@ export default function BillingScreen() {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
 
-  const [couponInput, setCouponInput] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState(null);
-  const [couponError, setCouponError] = useState(null);
-  const [couponLoading, setCouponLoading] = useState(false);
+  // Audience selection + per-checkout idempotency reference. Both reset on a new
+  // checkout so a previous choice is never reused by accident.
+  const [audience, setAudience] = useState(null);
+  const [checkoutKey, setCheckoutKey] = useState(function () {
+    return makeIdempotencyKey('pos');
+  });
 
-  const [previewVisible, setPreviewVisible] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [generateError, setGenerateError] = useState(null);
+  const [createdBill, setCreatedBill] = useState(null);
   const [cartModalVisible, setCartModalVisible] = useState(false);
 
   const load = useCallback(async function load(isRefresh) {
@@ -137,23 +147,25 @@ export default function BillingScreen() {
     [items, query, categoryFilter],
   );
 
-  const totals = useMemo(() => cartTotals(cart), [cart]);
-  const discount = appliedCoupon
-    ? sanitizeDiscount(appliedCoupon.discountAmount, totals.subtotal)
-    : 0;
-  const payable = computePayable(totals.subtotal, discount);
+  // Preview only: reprice the cart for the selected audience so line prices and
+  // totals update live (STAFF shows 60% of the customer menu price). The server
+  // recomputes the authoritative amounts at bill-creation time.
+  const displayCart = useMemo(() => cartForAudience(cart, audience), [cart, audience]);
+  const totals = useMemo(() => cartTotals(displayCart), [displayCart]);
 
   const isWide = width >= WIDE_MIN_WIDTH;
   const menuColumns = width >= 1280 ? 3 : width >= 680 ? 2 : 1;
 
-  // Any cart change invalidates a previously applied coupon (the server-verified
-  // discount may no longer match the new subtotal).
+  function startNewCheckout() {
+    setCart([]);
+    setAudience(null);
+    setCheckoutKey(makeIdempotencyKey('pos'));
+    setGenerateError(null);
+    setCreatedBill(null);
+  }
+
   function mutateCart(updater) {
     setCart(updater);
-    if (appliedCoupon) {
-      setAppliedCoupon(null);
-      setCouponError('Cart changed — re-apply the coupon to recalculate.');
-    }
     setGenerateError(null);
   }
 
@@ -181,6 +193,13 @@ export default function BillingScreen() {
     });
   }
 
+  function handleSelectAudience(value) {
+    setAudience(normalizeAudience(value));
+    setGenerateError(null);
+  }
+
+  // Clearing the cart begins a fresh checkout: reset the audience and the
+  // idempotency reference too.
   function confirmClear() {
     Alert.alert('Clear bill', 'Remove all items from the current bill?', [
       { text: 'Cancel', style: 'cancel' },
@@ -188,59 +207,39 @@ export default function BillingScreen() {
         text: 'Clear',
         style: 'destructive',
         onPress: function () {
-          mutateCart(function () {
-            return clearCart();
-          });
+          setCart(clearCart());
+          setAudience(null);
+          setCheckoutKey(makeIdempotencyKey('pos'));
+          setGenerateError(null);
         },
       },
     ]);
   }
 
-  async function handleApplyCoupon() {
-    if (!couponInput.trim()) {
-      setCouponError('Enter a coupon code.');
-      return;
-    }
-    if (totals.lineCount === 0) {
-      setCouponError('Add items before applying a coupon.');
-      return;
-    }
-    setCouponLoading(true);
-    setCouponError(null);
-    try {
-      const result = await validateCoupon(couponInput, totals.subtotal);
-      setAppliedCoupon({
-        code: result && result.code ? result.code : couponInput.trim().toUpperCase(),
-        discountAmount: result ? result.discountAmount : 0,
-        discountType: result ? result.discountType : undefined,
-        value: result ? result.value : undefined,
-      });
-    } catch (couponFailure) {
-      setAppliedCoupon(null);
-      setCouponError(getErrorMessage(couponFailure, 'Coupon could not be applied.'));
-    } finally {
-      setCouponLoading(false);
-    }
-  }
-
-  function handleClearCoupon() {
-    setAppliedCoupon(null);
-    setCouponError(null);
-    setCouponInput('');
-  }
-
-  // Local preview only: no POST /api/orders, no persistence, no payment.
-  function handleGenerate() {
-    if (previewVisible) {
+  async function handleGenerate() {
+    if (creating) {
       return;
     }
     if (!canGenerateBill(cart)) {
-      setGenerateError('Add at least one valid item before generating a bill.');
+      setGenerateError('Add at least one valid item before creating a bill.');
       return;
     }
+    if (normalizeAudience(audience) === null) {
+      setGenerateError('Select who this bill is for (Customer or Staff).');
+      return;
+    }
+    setCreating(true);
     setGenerateError(null);
-    setCartModalVisible(false);
-    setPreviewVisible(true);
+    try {
+      const payload = buildPosPayload(audience, cart);
+      const bill = await createPosBill(payload.audience, payload.items, checkoutKey);
+      setCartModalVisible(false);
+      setCreatedBill(bill);
+    } catch (createError) {
+      setGenerateError(billingErrorMessage(createError, 'Could not create the bill.'));
+    } finally {
+      setCreating(false);
+    }
   }
 
   function renderMenuCard({ item }) {
@@ -310,23 +309,17 @@ export default function BillingScreen() {
   function renderBillPanel() {
     return (
       <BillPanel
-        cart={cart}
+        cart={displayCart}
         totals={totals}
-        discount={discount}
-        payable={payable}
-        couponInput={couponInput}
-        appliedCoupon={appliedCoupon}
-        couponError={couponError}
-        couponLoading={couponLoading}
-        onCouponInputChange={setCouponInput}
-        onApplyCoupon={handleApplyCoupon}
-        onClearCoupon={handleClearCoupon}
+        audience={audience}
+        onSelectAudience={handleSelectAudience}
         onIncrement={handleIncrement}
         onDecrement={handleDecrement}
         onRemove={handleRemove}
         onClearCart={confirmClear}
         onGenerate={handleGenerate}
         generateError={generateError}
+        creating={creating}
       />
     );
   }
@@ -338,7 +331,7 @@ export default function BillingScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Gola Restaurant {'\u2014'} Billing</Text>
         <Text style={styles.headerSubtitle}>
-          Point of sale {'\u00b7'} local preview only {'\u00b7'} payment not recorded
+          Point of sale {'\u00b7'} choose Customer or Staff {'\u00b7'} server-priced bills
         </Text>
       </View>
 
@@ -415,7 +408,7 @@ export default function BillingScreen() {
             <Text style={styles.bottomCount}>
               {totals.unitCount} item{totals.unitCount === 1 ? '' : 's'}
             </Text>
-            <Text style={styles.bottomTotal}>{formatPrice(payable)}</Text>
+            <Text style={styles.bottomTotal}>{formatPrice(totals.subtotal)}</Text>
           </View>
           <Pressable
             style={styles.bottomButton}
@@ -446,15 +439,7 @@ export default function BillingScreen() {
         </Modal>
       ) : null}
 
-      <BillPreviewModal
-        visible={previewVisible}
-        cart={cart}
-        totals={totals}
-        discount={discount}
-        payable={payable}
-        appliedCoupon={appliedCoupon}
-        onClose={() => setPreviewVisible(false)}
-      />
+      <CreatedBillModal bill={createdBill} onClose={startNewCheckout} />
     </View>
   );
 }

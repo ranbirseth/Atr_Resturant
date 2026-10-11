@@ -209,6 +209,18 @@ test('billingErrorMessage maps known server codes to friendly text', () => {
   assert.equal(code('VOID_IN_PROGRESS'), 'This bill is already being voided.');
 });
 
+test('billingErrorMessage maps audience/POS creation codes to friendly text', () => {
+  const code = function (error) {
+    return billingErrorMessage({ status: 400, data: { error: error } });
+  };
+  assert.equal(code('AUDIENCE_REQUIRED'), 'Select who this bill is for (Customer or Staff).');
+  assert.equal(code('INVALID_AUDIENCE'), 'Select who this bill is for (Customer or Staff).');
+  assert.equal(code('MIXED_AUDIENCE'), 'This session mixes Customer and Staff orders. Bill one audience at a time.');
+  assert.equal(code('AUDIENCE_MISMATCH'), 'This session is billed for the other audience. Pick the matching one.');
+  assert.equal(code('IDEMPOTENCY_KEY_REUSED'), 'This checkout was already completed with different details. Start a new bill.');
+  assert.equal(code('INVALID_ORDER_ITEMS'), 'Some items are invalid or unavailable for this bill.');
+});
+
 test('billingErrorMessage falls back to the server message, then the fallback', () => {
   const http = new Error('HTTP 500');
   http.status = 500;

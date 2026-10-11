@@ -2,7 +2,94 @@
 
 Live status for the Inventory & Stock build (Phase 10). "Implemented" means working code + tests were completed in `server/` and `gola-expo-preview/`. Design documents are **not** counted as implemented.
 
-Last updated: 2026-10-10
+Last updated: 2026-10-11
+
+---
+
+## P1.3 (2026-10-11): Design Plan — READY FOR OWNER REVIEW
+
+See the plan in [audits §C.3 + corrections §C.3.1](../audits/README.md) and the review checklist in [P1.3 checklist report](../audits/p1.3-design-approval-checklist.md) (separate file). Overall: `P1.3 DESIGN PLAN READY FOR OWNER REVIEW — NO CODE CHANGES`. Read-only design review: **no source/schema/API/DB change, no protected directory touched, no new dependencies, no production writes**. Carried-forward green baselines: server `101/101` (P1.1), Expo utils `126/126` (P1.2) — not re-run.
+
+### Approval checklist (owner's 10 items) — post-correction
+| # | Item | Result |
+|---|---|---|
+| 1 | Backward-compatible SESSION + POS schemas | PASS |
+| 2 | Immutable audience/snapshots/quantities/integer-paise money | PASS — clarified code-path-enforced, not DB-level; regression test added (§C.3.1.2) |
+| 3 | Staff 60% + two-decimal rounding + no staff coupon | PASS |
+| 4 | Preserve existing orders/bills/payments/snapshots | PASS |
+| 5 | Atomic claiming, mixed-audience reject, partial billing, re-bill after void/reversal | PASS |
+| 6 | POS bill with no fabricated customer order | PASS |
+| 7 | Idempotent retries + same-key/different-hash rejection | PASS |
+| 8 | Payment/reversal/void/resume recovery for both origins | PASS |
+| 9 | Separate finalized-bill analytics vs legacy order metrics | PASS — analytics contract added as §C.3.1.1; finalized-status set remains an OWNER DECISION |
+| 10 | Tests, index creation, migration safety, rollback, regression | PASS |
+| G2 | Tracker/report §C.3 §10 consistency | CLOSED — reconciled here (§C.3.1.3) |
+
+### In progress
+| # | Item | Notes |
+|---|---|---|
+| 1 | Owner decisions Q1–Q5 (§C.3 §8) + analytics date/time-zone basis (§C.3.1.4) | Required before implementation |
+| 2 | Approval gates G1–G4 (§C.3 §8) | No implementation until all pass; G5 = stop before deploy |
+
+### Remaining (deferred)
+| # | Item | Notes |
+|---|---|---|
+| 1 | P1.3 implementation (audience pricing, POS bill, idempotency, bill analytics) | Blocked on owner decisions + gates; not started |
+
+---
+
+## P1.3 (prior audit): STOPPED BY DESIGN — DESIGN REPORT ONLY
+
+Superseded by the checklist entry above. See [P1.3 audit report](../audits/README.md) §C.2. Audit only: **no source/schema/API change, no protected directory touched, no new dependencies, no production writes**.
+
+### Completed
+| # | Item | Evidence |
+|---|---|---|
+| P1 | Traced the real bill-generation path: persisted Phase 2B bill = verbatim snapshot of pre-priced session orders; Phase 7 POS screen = non-persisted preview | `billingController.js:152,155`; `billingUtils.js:105,110`; `billService.js:20`; `BillingScreen.js:232` |
+| P2 | Confirmed the billing layer has **no** audience support (schema, controller, API, tablet) | `grep audience` → none in billing files; `Bill.js:71-78`; `generateSessionBill` posts `{}` |
+| P3 | Identified blocking issues: bill-time repricing desyncs bill from `Order.totalAmount`; mixed-audience sessions; intake guards not in billing; tablet has no POS order path | report §C.2.2 |
+| P4 | Confirmed coupons are order-time only → unresolved business rule for a staff bill | `orderController.js:128`; `couponUtils.js` |
+| P5 | STOPPED before any schema/API change per the phase STOP condition; produced the design report + required decisions | `docs/audits/README.md` §C.2 |
+
+### In progress
+| # | Item | Notes |
+|---|---|---|
+| 1 | Owner decisions required (D1–D4 in §C.2.7): bill semantics, coupon treatment, mixed-audience handling, direct-bill scope | Blocks any P1.3 implementation |
+
+### Remaining (deferred)
+| # | Item | Notes |
+|---|---|---|
+| 1 | P1.3 implementation (Customer/Staff selector on the persisted bill) | Blocked on owner decisions + a Bill schema/API change |
+| 2 | P1.4/P1.5 (tablet direct-bill / POS order path) | NOT started |
+
+---
+
+## P1.2 (2026-10-10): Expo Menu UI — Derived Staff Price
+
+See [P1.2 report](../audits/README.md) §C.1. Overall: `IMPLEMENTED — EXPO UI COMPLETE, AWAITING OWNER REVIEW`. Landed in `gola-expo-preview/` + `docs/` only; **`server/` untouched, no protected directory touched, no new dependencies, no production writes**.
+
+### Completed
+| # | Item | Evidence |
+|---|---|---|
+| P1 | Removed the manually editable Staff Price input from the item create/edit form | `gola-expo-preview/src/screens/MenuCategories/ItemFormModal.js` |
+| P2 | Added a read-only derived staff-price preview (60% of customer price, 2 dp) that updates live with the customer price | `ItemFormModal.js`; `src/utils/menuUtils.js` (`computeStaffPrice`, `formatPriceExact`) |
+| P3 | `computeStaffPrice` mirrors the backend exactly (`Math.round(price*0.6*100)/100`); tests assert the same expected values as `server/utils/menuUtils.test.js` — no second conflicting rule | `src/utils/menuUtils.js`, `src/utils/menuUtils.test.js` |
+| P4 | Customer price stays editable; payload no longer sends `staffPrice` (backend remains authoritative) | `ItemFormModal.js` |
+| P5 | Form validation no longer requires a staff price; legacy items with a stored `staffPrice` edit without errors (`formFromItem` ignores it) | `ItemFormModal.js`, `validateItemForm` |
+| P6 | Item cards show the derived staff price (`₹`, 2 dp); obsolete "Not set / needs configuring" warning + dead `hasStaffPrice` removed | `MenuManagement.js`, `src/utils/menuUtils.js` |
+| P7 | Verify: Expo utils **126/126**; `npx expo lint` **0 errors** (4 pre-existing warnings in untouched files); `npx expo export --platform android` bundled | 2026-10-10 |
+
+### In progress
+| # | Item | Notes |
+|---|---|---|
+| 1 | Owner review of the P1.2 report | Billing UI (Customer/Staff selector, direct-bill) NOT started; begins only after approval |
+| 2 | Production deploy (Render): P1.1 derived-pricing backend must ship before/with this UI | Until deployed, the live staff listing still returns the old manual field |
+
+### Remaining (deferred)
+| # | Item | Notes |
+|---|---|---|
+| 1 | Customer/Staff billing selector + direct-bill path | P1.3–P1.5, explicitly out of scope for P1.2 |
+| 2 | Optional data cleanup of inert legacy `staffPrice` values | Deferred by design (unchanged from P1.1) |
 
 ---
 
@@ -23,13 +110,13 @@ See [P1.1 report](../audits/README.md) §C.0. Overall: `IMPLEMENTED — BACKEND 
 ### In progress
 | # | Item | Notes |
 |---|---|---|
-| 1 | Owner review of the P1.1 report | P1.2–P1.5 (Expo UI) NOT started; begins only after approval |
+| 1 | Owner review of the P1.1 report | Approved — P1.2 (Expo derived staff-price UI) delivered; P1.3–P1.5 NOT started |
 | 2 | Production deploy (Render) of the derived-pricing backend | Also still pending: Phase 2B `/api/billing` + `ORDER_ALREADY_BILLED` guard |
 
 ### Remaining (deferred)
 | # | Item | Notes |
 |---|---|---|
-| 1 | Expo Menu/Billing UI: remove manual staff-price field, derive display, add Customer/Staff bill selector, direct-bill path | P1.2–P1.5, explicitly out of scope for P1.1 |
+| 1 | Expo Menu/Billing UI: remove manual staff-price field (✅ P1.2), derive display (✅ P1.2), add Customer/Staff bill selector, direct-bill path | P1.3–P1.5 remain (P1.2 done) |
 | 2 | Optional data cleanup of inert legacy `staffPrice` values | Deferred by design; field harmless and preserved |
 
 ---
@@ -266,3 +353,152 @@ See [Phase 1E report](../audits/README.md) (§E.0–E.1). Overall: `IMPLEMENTED 
 |---|---|---|
 | 1–8 | Printer audit, dashboard, orders, navigation, menu/dual-pricing, coupons, analytics, billing | Done (see `docs/README.md`, reports I1–I6) |
 | 9 | Inventory audits 9A → 9A.3 | Audit/design only — superseded by Phase 10 implementation |
+## P1.3 (2026-10-11): IMPLEMENTATION - COMPLETED
+
+**Status:** COMPLETED (tests passing).
+**Scope (server):** Bill schema updated (origin/audience/lines/idempotency), billingUtils helpers + DTO extensions, billingController (generateBill with audience/idempotency, createPosBill, getBillAnalytics), billingRoutes added; new billing.p13.api.test.js (9 tests) + extended billingUtils.test.js; all 111 server tests pass.
+**Docs:** docs/audits/README.md §C.3.2 added; docs/audits/p1.3-design-approval-checklist.md unchanged (design review).
+**Safety:** isolated test DBs, backward-compatible, no protected dirs modified.
+
+---
+
+## P1.3 (2026-10-11): PHASE 2C FINAL BILLING INTEGRATION AUDIT - COMPLETE (READ-ONLY)
+
+**Status:** READ-ONLY AUDIT COMPLETE - no code/DB/config/dep/deploy change. Full report: `docs/audits/README.md` section C.3.3.
+
+**Verified findings**
+- All 111 server tests pass (`npm test`: 111/111; integration files 51/51: billing.api 16, billing.p13 9, inventory.api 20, items.api 6).
+- Independent pricing (CUSTOMER = menu, STAFF = 60%), coupon rules (STAFF none, CUSTOMER preserves source discount once, clamped), audience guards, session+POS idempotency (sequential), analytics (recognized vs voided, grouped, IST range), POS with no fabricated Order, and lock release only after VOID: all PASS (see checklist in C.3.3).
+- No functional defect confirmed. No protected directory touched.
+
+**Unverified concerns (fixes optional, owner-approved, separate change)**
+- GAP-1 concurrent duplicate idempotency test; GAP-2 snapshot preservation across pay/reverse/void/resume; GAP-3 legacy-bill readability test; GAP-4 re-bill only after full void; GAP-5 exact IST boundary instant. Each is handled by design; only automated coverage is missing.
+- Pre-existing doc corruption in C.3.2/tracker text (control chars from interpreted escapes) recommended for a separate doc-only repair.
+
+---
+
+## P1.3 (2026-10-11): PHASE 2C.1 BILLING REGRESSION TESTS - COMPLETE
+
+**Status:** TESTS AND TARGETED FIXES ONLY - all five Phase 2C billing gaps now have automated regression coverage. Full server suite **118/118 pass**, confirmed on 6 consecutive runs. No production code/schema/migration/dependency/deploy change; no protected directory touched. Full report: `docs/audits/Phase2C1-billing-regression-tests.md`.
+
+**Test results (exact):**
+- `cd server; node --test "tests/billing.gaps.api.test.js"` -> **6/6 pass**.
+- `cd server; node --test "tests/inventory.api.test.js"` -> **20/20 pass** (after harness fix).
+- `cd server; npm test` -> **118/118 pass, 0 fail, 0 skipped** (61 util tests incl. +1 exact-IST-boundary unit test; 57 integration tests incl. +6 gaps tests) - confirmed on 6 consecutive full-suite runs.
+
+**Coverage added:**
+- GAP-1a POS concurrent idempotency - `billing.gaps.api.test.js:176` (6 parallel identical checkouts -> one bill, uniform replays; reused key/different payload -> 409).
+- GAP-1b SESSION concurrent idempotency - `billing.gaps.api.test.js:220` (one session bill; retryable 409s only; single active BILL lock).
+- GAP-2 immutable snapshot across payment/reversal/void/resume - `billing.gaps.api.test.js:273` (deep-equal pricing snapshot; resume stays VOID).
+- GAP-3 legacy bill readability - `billing.gaps.api.test.js:340` (raw pre-P1.3 doc readable/payable/analysable; no backfill).
+- GAP-4 safe re-billing - `billing.gaps.api.test.js:411` (orders released only on full void; reversal alone keeps them locked).
+- GAP-5 exact IST boundaries - `billing.gaps.api.test.js:473` + `billingUtils.test.js:255` (include/exclude at exact boundary instants).
+
+**Files changed:** new `server/tests/billing.gaps.api.test.js`; `server/utils/billingUtils.test.js` (+1 test, +1 require entry); `server/tests/inventory.api.test.js` (test-only harness fix - explicit `syncIndexes()` after the DB drop resolved an intermittent idempotency-index race exposed under 6-file parallel load; no assertion weakened). No implementation or data changes.
+
+**Owner approval required:** approve new tests before deployment; confirm SESSION idempotency-reuse semantics are the desired contract.
+
+
+---
+
+## P1.3 (2026-10-11): PHASE 2D DOCUMENTATION REPAIR - COMPLETE (OWNER SESSION-IDEMPOTENCY DECISION RECORDED)
+
+**Status:** DOCUMENTATION ONLY - repaired the confirmed control-character corruption in the section C.3.2 report (`docs/audits/README.md`) and the P1.3 IMPLEMENTATION entry above; recorded the owner SESSION-idempotency decision. No application code, tests, schema, configuration, dependency, database, or deployment change; no protected directory touched (`client/`, `AdminDashbord/`, `print-service/`, `react native frontend/`).
+
+**Owner decision (approved): SESSION idempotency semantics**
+- Same key + same request payload returns the original bill, even if the source order later changes.
+- Same key + different payload returns HTTP 409 `IDEMPOTENCY_KEY_REUSED`.
+- Existing bill snapshots are not recalculated on replay.
+
+**Repair summary:** corrupted control characters (U+0007/U+0008/U+0009/U+000B/U+000C/U+000D) replaced the intended first letters a/b/t/v/f/r; U+FFFD glyphs were restored per context (em dashes in the README C.3.2 heading, an ASCII hyphen in the tracker IMPLEMENTATION heading, and a section sign in the tracker C.3.2 reference); the split `node --test` command line was rejoined; trailing line-ending CR noise was normalized to LF. Findings, dates, test results, and report order are unchanged; no historical entry was deleted or rewritten.
+
+**Full report:** `docs/audits/README.md` section C.3.4 (Phase 2D).
+
+---
+
+## P1.3 (2026-10-11): PHASE 2E CUSTOMER/STAFF SELECTION IN BILLING - COMPLETE
+
+**Status:** IMPLEMENTED in `gola-expo-preview/` (Expo tablet UI) + documentation. The server already enforced audience (Phase 2C/P1.3); this phase adds the missing UI so an explicit Customer/Staff choice is captured and sent. No server source, schema, route, dependency, or deployment change; no protected directory touched (`client/`, `AdminDashbord/`, `print-service/`, `react native frontend/`).
+
+**Root cause:** the tablet billing UI never collected or sent the audience. The POS Billing tab (`BillingScreen.js`/`BillPanel.js`) was a local display-only preview and never called `POST /api/billing/pos/bills` (which requires `audience`); `billService` had no `createPosBill`. The session `BillModal.js` called `generateSessionBill(sessionId)` with an empty body, so `audience` was never transmitted.
+
+**How the audience reaches the backend:**
+- POS: `buildPosPayload(audience, cart)` -> `{ audience, items: [{ itemId, quantity }] }`; `createPosBill(...)` -> `POST /api/billing/pos/bills`. Creation disabled until an audience is selected (`canCreatePosBill`); server prices authoritatively.
+- Sessions: `generateSessionBill(sessionId, { audience, idempotencyKey })` -> `POST /api/billing/sessions/:sessionId/bills`; server rejects `MIXED_AUDIENCE` / `AUDIENCE_MISMATCH`.
+
+**Implemented:** mandatory Customer/Staff selector in both flows (no silent default); POS now creates real origin-`POS` bills (coupon UI removed - no POS coupon support); live audience pricing (Customer = menu, Staff = 60%); selection + fresh idempotency key reset per checkout; new `CreatedBillModal.js` renders the server DTO; `ERROR_CODES` extended for audience/POS/session errors.
+
+**Files changed (Expo + docs only):** new `gola-expo-preview/src/utils/audienceBilling.js` and `gola-expo-preview/src/screens/Billing/CreatedBillModal.js` and `gola-expo-preview/src/utils/audienceBilling.test.js`; `gola-expo-preview/src/api/billService.js`, `gola-expo-preview/src/utils/billUtils.js`, `gola-expo-preview/src/utils/billUtils.test.js`, `gola-expo-preview/src/screens/Billing/BillPanel.js`, `gola-expo-preview/src/screens/Billing/BillingScreen.js`, `gola-expo-preview/src/components/orders/BillModal.js`; deleted `gola-expo-preview/src/screens/Billing/BillPreviewModal.js`; `docs/audits/README.md`, this tracker.
+
+**Test results (exact, 2026-10-11):**
+- `cd gola-expo-preview; node --test src/utils/*.test.js` -> **139/139 pass, 0 fail** (was 126; +13 new).
+- `cd server; npm test` -> **118/118 pass, 0 fail** (unchanged; no server code touched).
+- `cd gola-expo-preview; npx expo lint` -> **0 errors, 4 warnings** (all pre-existing: 3 `unicode-bom`, 1 unused catch binding).
+- `cd gola-expo-preview; npx expo export --platform android` -> success. No tsconfig.json, so typecheck unavailable (unchanged).
+
+**Remaining / blockers:** POS bills have no session/orders, so POS payment entry is out of scope (Sessions flow records payments); no device/live-endpoint verification (no device tooling); no blockers.
+
+**Owner review required before any further work.** Full report: `docs/audits/README.md` section C.3.5.
+
+---
+
+## Dashboard TODAY-ONLY REWORK (2026-10-11): TODAY (IST) METRICS + LOW-STOCK ALERTS - COMPLETE
+
+**Status:** IMPLEMENTED in `gola-expo-preview/` + documentation. No server source/schema/route/dependency/deploy change; protected directories untouched; existing live endpoints reused (`/orders`, `/inventory/alerts`). Full report: `docs/audits/README.md` section C.3.6.
+
+**Root cause:** the dashboard computed lifetime / last-7-day aggregates client-side from the full `GET /api/orders` list; there was no "today only" basis, no IST filtering, and no low-stock surface. The server `/orders/analytics` endpoint was unusable (known F6 bug: CANCELLED included, not IST), so metrics are computed client-side in IST from source orders only.
+
+**Metric definitions:** `totalOrders` = all orders placed in the IST today (cancelled included); `totalRevenue` = non-cancelled today orders only; `pending` = PLACED/PENDING today; `completed` = COMPLETED (incl. legacy `Completed`) today; popular items = today + non-cancelled, ranked by quantity sold (top 5); trend = 24 hourly IST buckets (count + revenue); low-stock = active items with finite `remainingPercent <= 30` from `/inventory/alerts`. No 7-day/30-day filters.
+
+**Files changed (Expo + docs only):**
+- `gola-expo-preview/src/utils/dashboardMetrics.js` (rewritten: IST helpers + today stats/trend/popular + low-stock threshold; shared exports kept, `buildSevenDayTrend`/`localDateKey`/`WEEKDAYS` removed)
+- `gola-expo-preview/src/utils/dashboardMetrics.test.js` (rewritten, 27 tests incl. exact IST boundary instants)
+- `gola-expo-preview/src/api/dashboardService.js` (+`getLowStockAlerts`)
+- `gola-expo-preview/src/components/dashboard/LowStockAlerts.js` (new)
+- `gola-expo-preview/src/components/dashboard/OrdersTrend.js` (24-hour IST count+revenue bars)
+- `gola-expo-preview/src/components/dashboard/PopularItems.js` (subtitle: "Today's top 5...")
+- `gola-expo-preview/src/screens/Dashboard/DashboardScreen.js` (parallel orders + alerts load; today-only metrics; low-stock card; loading/error/retry/empty/refresh preserved)
+- `docs/audits/README.md` (§C.3.6), this tracker
+
+**Test results (exact, 2026-10-11):**
+- `cd gola-expo-preview; node --test src/utils/*.test.js` -> **150/150 pass, 0 fail** (was 139; dashboardMetrics 16 → 27).
+- `cd server; npm test` -> **118/118 pass, 0 fail** (unchanged; no server code touched).
+- `cd gola-expo-preview; npx expo lint` -> **0 errors, 4 warnings** (all pre-existing).
+- `cd gola-expo-preview; npx expo export --platform android` -> success. No tsconfig.json, so typecheck unavailable (unchanged).
+
+**Remaining / blockers:** no physical-tablet or live-endpoint verification (no device tooling); the pre-existing server `/orders/analytics` F6 bug remains open as Analytics work (deliberately not touched here); no blockers.
+
+**Owner review required before any further work.** Full report: `docs/audits/README.md` section C.3.6.
+
+---
+
+## PHASE 3 "REVIEWS & ANALYTICS" (2026-10-11): ANALYTICS TAB - BILL-BASED SALES + INVENTORY ACTIVITY + PURCHASE SUGGESTIONS - COMPLETE
+
+**Status:** IMPLEMENTED in `gola-expo-preview/` + one smallest-necessary read-only server route + docs. Reviews requirement already satisfied by the pre-existing `ReviewTab.js` (no feedback/server change). Protected directories untouched; no prod DB writes / deploy / new dependencies / auth changes. Full report: `docs/audits/README.md` section C.3.7.
+
+**Root cause:** earlier Analytics tab re-used order-based helpers and the flawed `GET /api/orders/analytics` (F6: CANCELLED included, not IST). Owner-approved design is **bill-based** (bills are the financial source of truth); there was no client bill-list endpoint, no IST analytics helpers, and no inventory activity / purchase suggestions for a range.
+
+**Date rules:** 1 Day = today IST; 7 Days = today + previous 6; 30 Days = today + previous 29 (Asia/Kolkata, UTC+05:30, no DST); exact boundary instants, inclusive start / exclusive end; changing the filter recomputes client-side in `useMemo` from already-loaded data (no refetch, never stale).
+
+**Metric definitions:** recognized = OPEN + SETTLED (count immediately, incl. just-generated); voided = VOIDING/VOID shown separately; revenue = recognized bill totals; AOV = recognized revenue ÷ recognized count; amountPaid/balanceDue handled separately (partial payments never double-counted); breakdowns per audience (CUSTOMER/STAFF; legacy=CUSTOMER) and origin (SESSION/POS; legacy=SESSION) with counts and amounts; daily buckets keep zero-sales days. Inventory = COMMITTED only (RESERVED excluded); per-item quantities in the item's own unit (never summed across units); items added by createdAt; 500-movement cap flagged in UI. Purchase Suggestions = consumption-ranked (qty desc, name asc, id asc), reorder = minStock − currentQty only when min>0 && current<min, else em dash; usage-based, no fabricated supplier/price/lead time/order qty. Unavailable datasets show honest "data unavailable" (secondary fetches catch→null; never fake numbers).
+
+**Server change (smallest, tested):** new read-only `GET /api/billing/bills` (PII-free `toBillDTO` list, `createdAt desc`) with optional `from`/`to` date-only IST filters (`resolveAnalyticsRange`, GAP-5), `origin`, `audience`, `status` (400 stable codes `INVALID_RANGE`/`INVALID_ORIGIN`/`INVALID_AUDIENCE`/`INVALID_STATUS`); legacy bills matched via `$in` and defaulted SESSION/CUSTOMER by `toBillDTO`.
+
+**Files changed:**
+- `server/controllers/billingController.js` (+`getBillList`), `server/routes/billingRoutes.js` (+`router.get('/bills', ...)`), `server/tests/billing.list.api.test.js` (new)
+- `gola-expo-preview/src/utils/billAnalyticsUtils.js` + `.test.js` (new)
+- `gola-expo-preview/src/utils/inventoryAnalyticsUtils.js` + `.test.js` (new, incl. `buildItemActivity`)
+- `gola-expo-preview/src/api/billService.js` (+`getBills`)
+- `gola-expo-preview/src/screens/ReviewsAnalytics/AnalyticsTab.js` (rewritten: range chips 1/7/30 Days, Sales Overview / Daily Sales / Bill Breakdown / Inventory Activity / Purchase Suggestions; loading/error/retry/pull-to-refresh/empty preserved)
+- `docs/audits/README.md` (§C.3.7), this tracker
+- Untouched by design: `ReviewTab.js`, `analyticsUtils.js` (still supplies formatting + rating stats), order submission / review submission flows, drawer, theme.
+
+**Test results (exact, 2026-10-11):**
+- `cd gola-expo-preview; node --test src/utils/*.test.js` -> **171/171 pass, 0 fail** (was 150; +12 `billAnalyticsUtils.test.js`, +9 `inventoryAnalyticsUtils.test.js`).
+- `cd server; npm test` -> **125/125 pass, 0 fail** (was 118; +7 `billing.list.api.test.js`, dedicated `gola_billing_list_test` DB via `BILLING_LIST_TEST_MONGO_URI`).
+- `cd gola-expo-preview; npx expo lint` -> **0 errors, 4 warnings** (all pre-existing).
+- `cd gola-expo-preview; npx expo export --platform android` -> success. No tsconfig.json, so typecheck unavailable (unchanged).
+
+**Remaining / blockers:** no physical-tablet or live-endpoint verification (no device tooling); the pre-existing server `/orders/analytics` F6 bug remains open (deliberately not used / not touched); no POS payment/printer work started (stop point of this phase). No blockers.
+
+**Owner review required before any further work.** Full report: `docs/audits/README.md` section C.3.7.

@@ -29,9 +29,18 @@ function isValidPrice(value) {
   return toFinitePrice(value) !== null;
 }
 
-// A legacy item has no usable staff price and must be flagged in the UI.
-function hasStaffPrice(item) {
-  return !!item && isValidPrice(item.staffPrice);
+// P1.2: the staff price is DERIVED from the authoritative customer price as 60%
+// of it, rounded to two decimal places (half-paise rounds up via Math.round).
+// This mirrors the backend source of truth exactly:
+// server/utils/menuUtils.js `computeStaffPrice` (Math.round(price * 0.6 * 100) / 100).
+// The legacy stored `item.staffPrice` is NEVER used. The backend remains
+// authoritative for all written/ordered prices; this is a display preview only.
+function computeStaffPrice(price) {
+  const base = toFinitePrice(price);
+  if (base === null) {
+    return null;
+  }
+  return Math.round(base * 0.6 * 100) / 100;
 }
 
 function normalizeCategoryName(name) {
@@ -53,12 +62,25 @@ function formatPrice(value) {
   return formatCurrency(parsed);
 }
 
-// Price shown for a given audience ('CUSTOMER' | 'STAFF').
+// Two-decimal rupee string (e.g. "₹59.40"), used for the derived staff price so
+// the paise-level rounding from computeStaffPrice is never hidden by the
+// integer-only formatPrice.
+function formatPriceExact(value) {
+  const parsed = toFinitePrice(value);
+  if (parsed === null) {
+    return '\u2014';
+  }
+  return '\u20B9' + parsed.toFixed(2);
+}
+
+// Price shown for a given audience ('CUSTOMER' | 'STAFF'). CUSTOMER uses the
+// editable customer price; STAFF is always derived (60%, 2dp) and ignores any
+// legacy stored `item.staffPrice`.
 function audiencePrice(item, audience) {
   if (!item) {
     return null;
   }
-  return audience === 'STAFF' ? toFinitePrice(item.staffPrice) : toFinitePrice(item.price);
+  return audience === 'STAFF' ? computeStaffPrice(item.price) : toFinitePrice(item.price);
 }
 
 // Search + category + veg filters for the item list.
@@ -110,9 +132,6 @@ function validateItemForm(form) {
   if (toFinitePrice(values.price) === null) {
     errors.price = 'Customer price must be 0 or more';
   }
-  if (toFinitePrice(values.staffPrice) === null) {
-    errors.staffPrice = 'Staff price is required (0 or more)';
-  }
 
   const prep = values.estimatedPreparationTime;
   if (prep !== undefined && prep !== null && String(prep).trim() !== '') {
@@ -153,10 +172,11 @@ module.exports = {
   toFiniteNumber: toFiniteNumber,
   toFinitePrice: toFinitePrice,
   isValidPrice: isValidPrice,
-  hasStaffPrice: hasStaffPrice,
+  computeStaffPrice: computeStaffPrice,
   normalizeCategoryName: normalizeCategoryName,
   categoryKey: categoryKey,
   formatPrice: formatPrice,
+  formatPriceExact: formatPriceExact,
   audiencePrice: audiencePrice,
   filterItems: filterItems,
   itemCountForCategory: itemCountForCategory,

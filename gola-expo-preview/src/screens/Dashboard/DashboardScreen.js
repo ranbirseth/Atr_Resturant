@@ -10,17 +10,18 @@ import {
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 
-import {getOrders} from '../../api/dashboardService';
+import {getLowStockAlerts, getOrders} from '../../api/dashboardService';
 import {
-  buildSevenDayTrend,
-  computePopularItems,
-  computeStats,
+  buildTodayTrend,
+  computeTodayPopularItems,
+  computeTodayStats,
   formatCurrency,
   formatNumber,
 } from '../../utils/dashboardMetrics';
 import StatCard from '../../components/dashboard/StatCard';
 import OrdersTrend from '../../components/dashboard/OrdersTrend';
 import PopularItems from '../../components/dashboard/PopularItems';
+import LowStockAlerts from '../../components/dashboard/LowStockAlerts';
 import {COLORS, RADIUS, SPACING} from '../../theme';
 
 const H_PADDING = SPACING.lg;
@@ -34,6 +35,8 @@ function SkeletonBlock({height, style}) {
 export default function DashboardScreen() {
   const {width} = useWindowDimensions();
   const [orders, setOrders] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [viewedAt, setViewedAt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -46,8 +49,15 @@ export default function DashboardScreen() {
     }
     setError(null);
     try {
-      const data = await getOrders();
-      setOrders(data);
+      const [ordersData, alertsData] = await Promise.all([
+        getOrders(),
+        getLowStockAlerts().catch(function () {
+          return [];
+        }),
+      ]);
+      setOrders(ordersData);
+      setAlerts(alertsData);
+      setViewedAt(new Date());
     } catch (e) {
       setError((e && e.message) || 'Failed to load dashboard data.');
     } finally {
@@ -74,11 +84,17 @@ export default function DashboardScreen() {
     [orders],
   );
 
-  const stats = useMemo(() => computeStats(safeOrders), [safeOrders]);
-  const trend = useMemo(() => buildSevenDayTrend(safeOrders), [safeOrders]);
+  const stats = useMemo(
+    () => computeTodayStats(safeOrders, viewedAt),
+    [safeOrders, viewedAt],
+  );
+  const trend = useMemo(
+    () => buildTodayTrend(safeOrders, viewedAt),
+    [safeOrders, viewedAt],
+  );
   const popularItems = useMemo(
-    () => computePopularItems(safeOrders, 5),
-    [safeOrders],
+    () => computeTodayPopularItems(safeOrders, viewedAt, 5),
+    [safeOrders, viewedAt],
   );
 
   const isTwoColumn = width >= TWO_COLUMN_MIN_WIDTH;
@@ -90,31 +106,31 @@ export default function DashboardScreen() {
   const statCards = [
     {
       key: 'revenue',
-      label: 'Total Revenue',
+      label: "Today's Revenue",
       value: formatCurrency(stats.totalRevenue),
       accent: COLORS.revenue,
-      hint: 'From non-cancelled orders',
+      hint: 'IST today · non-cancelled',
     },
     {
       key: 'orders',
-      label: 'Total Orders',
+      label: "Today's Orders",
       value: formatNumber(stats.totalOrders),
       accent: COLORS.orders,
-      hint: 'All orders returned by the API',
+      hint: 'All orders placed in IST today',
     },
     {
       key: 'pending',
       label: 'Pending Orders',
       value: formatNumber(stats.pendingOrders),
       accent: COLORS.pending,
-      hint: 'PLACED + PENDING',
+      hint: 'PLACED + PENDING (IST today)',
     },
     {
       key: 'completed',
       label: 'Completed Orders',
       value: formatNumber(stats.completedOrders),
       accent: COLORS.completed,
-      hint: 'COMPLETED (incl. legacy Completed)',
+      hint: 'COMPLETED (IST today)',
     },
   ];
 
@@ -130,7 +146,7 @@ export default function DashboardScreen() {
       }>
       <Text style={styles.pageTitle}>Dashboard Overview</Text>
       <Text style={styles.pageSubtitle}>
-        Live snapshot from GET /api/orders
+        Today&apos;s IST snapshot from /api/orders + /api/inventory/alerts
       </Text>
 
       {error && hasData ? (
@@ -200,9 +216,13 @@ export default function DashboardScreen() {
 
           <PopularItems items={popularItems} />
 
+          <View style={styles.spacer} />
+
+          <LowStockAlerts alerts={alerts} />
+
           {hasData && safeOrders.length === 0 ? (
             <Text style={styles.emptyNote}>
-              No orders yet. Pull down to refresh once orders come in.
+              No orders today yet. Pull down to refresh once orders come in.
             </Text>
           ) : null}
         </>

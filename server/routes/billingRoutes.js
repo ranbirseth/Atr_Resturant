@@ -14,7 +14,15 @@ const {
     reversePayment,
     voidBill,
     resumeBill,
+    createPosBill,
+    getBillAnalytics,
+    getBillList,
 } = require('../controllers/billingController');
+
+// POS and analytics
+router.post('/pos/bills', createPosBill);
+router.get('/analytics', getBillAnalytics);
+router.get('/bills', getBillList);
 
 // Session-scoped bill operations
 router.post('/sessions/:sessionId/bills', generateBill);

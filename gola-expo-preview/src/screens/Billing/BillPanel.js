@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
@@ -15,30 +14,36 @@ import {
   formatCurrency,
   lineTotal,
 } from '../../utils/billingUtils';
+import { AUDIENCES, audienceLabel, normalizeAudience } from '../../utils/audienceBilling';
+
+const AUDIENCE_BLURB = {
+  CUSTOMER: 'Current menu price.',
+  STAFF: '60% of the customer menu price.',
+};
 
 // Bill/cart panel for the POS screen. Pure presentation: all state lives in the
 // BillingScreen container. Rendered inline on wide (tablet) layouts and inside
 // a Modal on narrow layouts.
+//
+// `cart` arrives already priced for the selected audience (see
+// audienceBilling.cartForAudience), so line prices and totals update live when
+// the selection changes. Creating a bill is blocked until an audience is chosen
+// - new checkouts never silently default to Customer.
 export default function BillPanel({
   cart,
   totals,
-  discount,
-  payable,
-  couponInput,
-  appliedCoupon,
-  couponError,
-  couponLoading,
-  onCouponInputChange,
-  onApplyCoupon,
-  onClearCoupon,
+  audience,
+  onSelectAudience,
   onIncrement,
   onDecrement,
   onRemove,
   onClearCart,
   onGenerate,
   generateError,
+  creating,
 }) {
-  const canGenerate = totals.lineCount > 0;
+  const selected = normalizeAudience(audience);
+  const canGenerate = totals.lineCount > 0 && selected !== null && !creating;
 
   return (
     <View style={styles.panel}>
@@ -53,6 +58,35 @@ export default function BillPanel({
             <Text style={styles.clearButtonText}>Clear</Text>
           </Pressable>
         ) : null}
+      </View>
+
+      <View style={styles.audienceBox}>
+        <Text style={styles.sectionLabel}>Who is this bill for?</Text>
+        <View style={styles.audienceRow}>
+          {AUDIENCES.map(function (value) {
+            const active = selected === value;
+            const disabled = creating;
+            return (
+              <Pressable
+                key={value}
+                onPress={() => onSelectAudience(value)}
+                disabled={disabled}
+                style={[styles.audienceChip, active && styles.audienceChipActive, disabled && styles.audienceChipDisabled]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={'Bill for ' + audienceLabel(value)}>
+                <Text style={[styles.audienceChipText, active && styles.audienceChipTextActive]}>
+                  {audienceLabel(value)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.audienceHint}>
+          {selected
+            ? audienceLabel(selected) + ' pricing \u00b7 ' + AUDIENCE_BLURB[selected]
+            : 'Select Customer or Staff before creating the bill.'}
+        </Text>
       </View>
 
       {cart.length === 0 ? (
@@ -110,47 +144,6 @@ export default function BillPanel({
         </ScrollView>
       )}
 
-      <View style={styles.couponBox}>
-        <Text style={styles.sectionLabel}>Coupon (optional)</Text>
-        <View style={styles.couponRow}>
-          <TextInput
-            style={styles.couponInput}
-            value={couponInput}
-            onChangeText={onCouponInputChange}
-            placeholder="Enter code"
-            placeholderTextColor={COLORS.muted}
-            autoCapitalize="characters"
-            editable={!appliedCoupon && !couponLoading}
-          />
-          {appliedCoupon ? (
-            <Pressable
-              style={styles.couponClear}
-              onPress={onClearCoupon}
-              accessibilityRole="button">
-              <Text style={styles.couponClearText}>Remove</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              style={[styles.couponApply, couponLoading && styles.couponApplyDisabled]}
-              onPress={onApplyCoupon}
-              disabled={couponLoading || cart.length === 0}
-              accessibilityRole="button">
-              {couponLoading ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <Text style={styles.couponApplyText}>Apply</Text>
-              )}
-            </Pressable>
-          )}
-        </View>
-        {appliedCoupon ? (
-          <Text style={styles.couponSuccess}>
-            {appliedCoupon.code} applied ({'-' + formatCurrency(discount)})
-          </Text>
-        ) : null}
-        {couponError ? <Text style={styles.couponError}>{couponError}</Text> : null}
-      </View>
-
       <View style={styles.totals}>
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>
@@ -158,21 +151,14 @@ export default function BillPanel({
           </Text>
           <Text style={styles.totalValue}>{formatCurrency(totals.subtotal)}</Text>
         </View>
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Discount</Text>
-          <Text style={styles.totalValue}>
-            {discount > 0 ? '-' + formatCurrency(discount) : formatCurrency(0)}
-          </Text>
-        </View>
         <View style={[styles.totalRow, styles.grandRow]}>
           <Text style={styles.grandLabel}>Final Payable</Text>
-          <Text style={styles.grandValue}>{formatCurrency(payable)}</Text>
+          <Text style={styles.grandValue}>{formatCurrency(totals.subtotal)}</Text>
         </View>
         <Text style={styles.taxNote}>
-          No tax, service charge, or surcharge is added. Discounts use the verified
-          coupon API only.
+          No tax, service charge, or surcharge is added. Prices are calculated by the
+          server when the bill is created.
         </Text>
-        <Text style={styles.paymentNote}>Payment not recorded.</Text>
       </View>
 
       {generateError ? <Text style={styles.generateError}>{generateError}</Text> : null}
@@ -182,9 +168,19 @@ export default function BillPanel({
         onPress={onGenerate}
         disabled={!canGenerate}
         accessibilityRole="button">
-        <Text style={styles.generateButtonText}>Generate Bill</Text>
+        {creating ? (
+          <ActivityIndicator size="small" color="#ffffff" />
+        ) : (
+          <Text style={styles.generateButtonText}>Create Bill</Text>
+        )}
       </Pressable>
-      <Text style={styles.generateHint}>Creates a local preview only — nothing is saved.</Text>
+      <Text style={styles.generateHint}>
+        {totals.lineCount === 0
+          ? 'Add at least one item to create a bill.'
+          : selected
+            ? 'Saved on the server with ' + audienceLabel(selected) + ' pricing.'
+            : 'Choose Customer or Staff to enable bill creation.'}
+      </Text>
     </View>
   );
 }
@@ -218,6 +214,53 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     fontWeight: '700',
     fontSize: 13,
+  },
+  audienceBox: {
+    marginTop: SPACING.md,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  audienceRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  audienceChip: {
+    flex: 1,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+  },
+  audienceChipActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  audienceChipDisabled: {
+    opacity: 0.5,
+  },
+  audienceChipText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  audienceChipTextActive: {
+    color: '#ffffff',
+  },
+  audienceHint: {
+    marginTop: SPACING.sm,
+    fontSize: 12,
+    color: COLORS.muted,
   },
   emptyCart: {
     flex: 1,
@@ -317,75 +360,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: COLORS.text,
   },
-  couponBox: {
-    marginTop: SPACING.md,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.muted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  couponRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginTop: SPACING.sm,
-  },
-  couponInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    fontSize: 15,
-    color: COLORS.text,
-    backgroundColor: COLORS.surface,
-  },
-  couponApply: {
-    minWidth: 72,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    borderRadius: RADIUS.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.accent,
-  },
-  couponApplyDisabled: {
-    opacity: 0.5,
-  },
-  couponApplyText: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-  couponClear: {
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    borderRadius: RADIUS.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.dangerBg,
-  },
-  couponClearText: {
-    color: COLORS.danger,
-    fontWeight: '700',
-  },
-  couponSuccess: {
-    marginTop: SPACING.sm,
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.revenue,
-  },
-  couponError: {
-    marginTop: SPACING.sm,
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.danger,
-  },
   totals: {
     marginTop: SPACING.lg,
     paddingTop: SPACING.md,
@@ -427,12 +401,6 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     fontSize: 11,
     color: COLORS.muted,
-  },
-  paymentNote: {
-    marginTop: SPACING.xs,
-    fontSize: 12,
-    fontWeight: '800',
-    color: COLORS.pending,
   },
   generateError: {
     marginTop: SPACING.md,

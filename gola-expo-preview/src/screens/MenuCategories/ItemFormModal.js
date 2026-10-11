@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { COLORS, RADIUS, SPACING } from '../../theme';
-import { validateItemForm } from '../../utils/menuUtils';
+import { computeStaffPrice, formatPriceExact, validateItemForm } from '../../utils/menuUtils';
 
 function toInput(value) {
   if (value === undefined || value === null) {
@@ -24,7 +24,6 @@ function emptyForm() {
     name: '',
     category: '',
     price: '',
-    staffPrice: '',
     description: '',
     image: '',
     isVeg: true,
@@ -38,11 +37,12 @@ function formFromItem(item) {
   if (!item) {
     return emptyForm();
   }
+  // Any legacy stored `item.staffPrice` is intentionally ignored (P1.1/P1.2):
+  // the staff price is derived, and is never edited or written back.
   return {
     name: toInput(item.name),
     category: item.category || '',
     price: toInput(item.price),
-    staffPrice: toInput(item.staffPrice),
     description: toInput(item.description),
     image: toInput(item.image),
     isVeg: item.isVeg !== false,
@@ -86,11 +86,13 @@ export default function ItemFormModal({ item, categories, saving, serverError, o
     if (!result.valid) {
       return;
     }
+    // The staff price is NOT sent: the backend is authoritative and derives it
+    // as 60% of the customer price. Sending a manual value would be ignored and
+    // would risk diverging from the server rule.
     const payload = {
       name: form.name.trim(),
       category: form.category,
       price: Number(form.price),
-      staffPrice: Number(form.staffPrice),
       description: form.description.trim(),
       image: form.image.trim(),
       isVeg: form.isVeg,
@@ -104,6 +106,7 @@ export default function ItemFormModal({ item, categories, saving, serverError, o
   }
 
   const categoryOptions = Array.isArray(categories) ? categories : [];
+  const derivedStaffPrice = computeStaffPrice(form.price);
 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
@@ -154,14 +157,11 @@ export default function ItemFormModal({ item, categories, saving, serverError, o
                 />
               </View>
               <View style={styles.rowItem}>
-                <Field
-                  label="Staff Price (₹)"
-                  value={form.staffPrice}
-                  onChangeText={(text) => setField('staffPrice', text)}
-                  error={errors.staffPrice}
-                  keyboardType="numeric"
-                  placeholder="0"
-                />
+                <Text style={styles.label}>Staff Price (auto)</Text>
+                <View style={[styles.input, styles.readOnly]}>
+                  <Text style={styles.readOnlyText}>{formatPriceExact(derivedStaffPrice)}</Text>
+                </View>
+                <Text style={styles.hint}>60% of customer price, rounded to 2 decimals</Text>
               </View>
             </View>
 
@@ -290,6 +290,16 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: COLORS.danger,
+  },
+  readOnly: {
+    justifyContent: 'center',
+    backgroundColor: COLORS.background,
+    opacity: 0.85,
+  },
+  readOnlyText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.muted,
   },
   fieldError: {
     marginTop: SPACING.xs,

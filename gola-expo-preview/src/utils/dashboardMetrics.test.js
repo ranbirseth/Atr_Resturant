@@ -1,6 +1,6 @@
 'use strict';
 
-// Focused unit tests for the pure dashboard metric functions.
+// Unit tests for the pure dashboard metric functions.
 // Run with: node --test src/utils/dashboardMetrics.test.js
 
 const test = require('node:test');
@@ -10,11 +10,17 @@ const {
   normalizeStatus,
   toNumber,
   computeStats,
-  buildSevenDayTrend,
+  istDateKey,
+  istDayBounds,
+  filterOrdersForIstDay,
+  computeTodayStats,
+  buildTodayTrend,
   computePopularItems,
+  computeTodayPopularItems,
+  hasLowRemainingStock,
+  filterLowStockAlerts,
   formatNumber,
   formatCurrency,
-  localDateKey,
 } = require('./dashboardMetrics');
 
 test('normalizeStatus trims and upper-cases, tolerating bad input', () => {
@@ -92,54 +98,116 @@ test('empty orders produce valid zero values', () => {
   });
 });
 
-test('seven-day trend returns exactly seven buckets ending today', () => {
-  const now = new Date(2026, 9, 9, 12, 0, 0); // Oct 9 2026 local
-  const trend = buildSevenDayTrend([], now);
-  assert.equal(trend.length, 7);
-  assert.equal(trend[6].key, '2026-10-09');
-  assert.equal(trend[0].key, '2026-10-03');
+test('istDateKey uses the IST wall-clock day, not UTC (18:30Z => next IST day)', () => {
+  // 2026-10-10T18:30:00.000Z == 2026-10-11T00:00:00.000+05:30
+  assert.equal(istDateKey(new Date('2026-10-10T18:30:00.000Z')), '2026-10-11');
+  // 2026-10-10T18:29:59.000Z == 2026-10-10T23:59:59.000+05:30
+  assert.equal(istDateKey(new Date('2026-10-10T18:29:59.000Z')), '2026-10-10');
+  // Mid-day IST and mid-day UTC obviously map to the same IST calendar day.
+  assert.equal(istDateKey(new Date('2026-10-11T03:30:00.000Z')), '2026-10-11');
+  assert.equal(istDateKey(new Date('2026-10-11T09:00:00.000Z')), '2026-10-11');
 });
 
-test('seven-day trend counts orders on their local calendar day', () => {
-  const now = new Date(2026, 9, 9, 12, 0, 0);
+test('istDayBounds resolves the exact IST day boundary instants', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z'); // 09:00 IST on 2026-10-11
+  const bounds = istDayBounds(now);
+  assert.equal(bounds.start.toISOString(), '2026-10-10T18:30:00.000Z');
+  assert.equal(bounds.end.toISOString(), '2026-10-11T18:30:00.000Z');
+});
+
+test('istDayBounds around the boundary instant (18:29:59.999Z belongs to yesterday)', () => {
+  // 2026-10-10T18:29:59.999Z == 23:59:59.999 IST on 2026-10-10 -> still "yesterday".
+  const now = new Date('2026-10-10T18:29:59.999Z');
+  const bounds = istDayBounds(now);
+  assert.equal(bounds.start.toISOString(), '2026-10-09T18:30:00.000Z');
+  assert.equal(bounds.end.toISOString(), '2026-10-10T18:30:00.000Z');
+});
+
+test('filterOrdersForIstDay includes/excludes the exact boundary instants', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z'); // IST today = 2026-10-11
   const orders = [
-    { createdAt: new Date(2026, 9, 9, 9, 0, 0).toISOString() },
-    { createdAt: new Date(2026, 9, 9, 20, 0, 0).toISOString() },
-    { createdAt: new Date(2026, 9, 7, 1, 0, 0).toISOString() },
+    { createdAt: '2026-10-10T18:30:00.000Z' }, // start boundary      -> include
+    { createdAt: '2026-10-11T18:29:59.999Z' }, // just before end      -> include
+    { createdAt: '2026-10-10T18:29:59.999Z' }, // previous IST day     -> exclude
+    { createdAt: '2026-10-11T18:30:00.000Z' }, // next IST day (end)   -> exclude
   ];
-  const trend = buildSevenDayTrend(orders, now);
-  const byKey = {};
-  trend.forEach(function (d) {
-    byKey[d.key] = d.count;
-  });
-  assert.equal(byKey['2026-10-09'], 2);
-  assert.equal(byKey['2026-10-07'], 1);
-  assert.equal(byKey['2026-10-08'], 0);
+  const today = filterOrdersForIstDay(orders, now);
+  assert.equal(today.length, 2);
+  assert.equal(today[0].createdAt, '2026-10-10T18:30:00.000Z');
+  assert.equal(today[1].createdAt, '2026-10-11T18:29:59.999Z');
 });
 
-test('seven-day trend ignores orders with invalid / missing createdAt', () => {
-  const now = new Date(2026, 9, 9, 12, 0, 0);
-  const trend = buildSevenDayTrend(
-    [{}, { createdAt: 'not-a-date' }, { createdAt: null }],
+test('filterOrdersForIstDay ignores absent or invalid createdAt', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const list = filterOrdersForIstDay(
+    [{ createdAt: '2026-10-10T19:00:00.000Z' }, {}, { createdAt: 'not-a-date' }, null],
     now,
   );
-  const total = trend.reduce(function (sum, d) {
-    return sum + d.count;
+  assert.equal(list.length, 1);
+});
+
+test('computeTodayStats reports only the IST day, revenue excluding cancelled', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z'); // IST today = 2026-10-11
+  const orders = [
+    { createdAt: '2026-10-10T19:00:00.000Z', status: 'COMPLETED', totalAmount: 250 }, // 00:30 IST -> today
+    { createdAt: '2026-10-10T18:40:00.000Z', status: 'PLACED', totalAmount: 100 }, // 00:10 IST -> today
+    { createdAt: '2026-10-10T18:29:00.000Z', status: 'COMPLETED', totalAmount: 999 }, // 23:59 IST yesterday -> excluded
+    { createdAt: '2026-10-11T17:00:00.000Z', status: 'CANCELLED', totalAmount: 500 }, // 22:30 IST today, cancelled
+  ];
+  const stats = computeTodayStats(orders, now);
+  assert.equal(stats.totalOrders, 3); // cancelled still counts as an order placed today
+  assert.equal(stats.pendingOrders, 1);
+  assert.equal(stats.completedOrders, 1);
+  assert.equal(stats.totalRevenue, 350); // 250 + 100; cancelled 500 excluded
+});
+
+test('computeTodayStats handles empty and missing input safely', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  assert.deepEqual(computeTodayStats([], now), {
+    totalOrders: 0,
+    pendingOrders: 0,
+    completedOrders: 0,
+    totalRevenue: 0,
+  });
+  assert.deepEqual(computeTodayStats(null, now), {
+    totalOrders: 0,
+    pendingOrders: 0,
+    completedOrders: 0,
+    totalRevenue: 0,
+  });
+});
+
+test('buildTodayTrend returns 24 hourly buckets, grouping by IST hour', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z'); // 09:00 IST on 2026-10-11
+  const orders = [
+    { createdAt: '2026-10-10T18:40:00.000Z', status: 'PLACED', totalAmount: 100 }, // 00:10 IST -> hour 0
+    { createdAt: '2026-10-10T19:00:00.000Z', status: 'COMPLETED', totalAmount: 250 }, // 00:30 IST -> hour 0
+    { createdAt: '2026-10-11T17:00:00.000Z', status: 'CANCELLED', totalAmount: 500 }, // 22:30 IST -> hour 22
+    { createdAt: '2026-10-10T18:29:00.000Z', status: 'COMPLETED', totalAmount: 999 }, // yesterday -> excluded
+  ];
+  const trend = buildTodayTrend(orders, now);
+  assert.equal(trend.length, 24);
+  assert.equal(trend[0].key, '2026-10-11:00');
+  assert.equal(trend[0].hour, 0);
+  assert.equal(trend[0].count, 2); // both orders placed before 01:00 IST
+  assert.equal(trend[0].revenue, 350); // 100 + 250, no cancellation in this hour
+  assert.equal(trend[22].count, 1);
+  assert.equal(trend[22].revenue, 0); // cancelled order contributes no revenue
+  assert.equal(trend[23].count, 0);
+  assert.equal(trend[23].revenue, 0);
+});
+
+test('buildTodayTrend handles empty orders and bad dates', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const trend = buildTodayTrend([{ createdAt: null }, { createdAt: 'bad' }], now);
+  assert.equal(trend.length, 24);
+  const total = trend.reduce(function (sum, b) {
+    return sum + b.count;
   }, 0);
   assert.equal(total, 0);
 });
 
-test('seven-day trend handles dates with zero orders (all zero, no crash)', () => {
-  const now = new Date(2026, 9, 9, 12, 0, 0);
-  const trend = buildSevenDayTrend([], now);
-  trend.forEach(function (d) {
-    assert.equal(d.count, 0);
-    assert.ok(typeof d.key === 'string');
-    assert.ok(typeof d.label === 'string');
-  });
-});
-
-test('popular items aggregates by normalized name, top 5, sorted by quantity', () => {
+test('popular items aggregates by normalized name, sorted by quantity', () => {
   const orders = [
     {
       items: [
@@ -192,6 +260,114 @@ test('popular items handles missing/empty items and invalid numbers safely', () 
   assert.ok(!Number.isNaN(popular[0].revenue));
 });
 
+test('computeTodayPopularItems keeps only today + non-cancelled and ranks by quantity', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z'); // IST today = 2026-10-11
+  const orders = [
+    {
+      createdAt: '2026-10-10T19:00:00.000Z', // today 00:30 IST
+      status: 'COMPLETED',
+      items: [
+        { name: 'Butter Chicken', price: 300, quantity: 2 },
+        { name: 'Naan', price: 40, quantity: 3 },
+      ],
+    },
+    {
+      createdAt: '2026-10-10T18:50:00.000Z', // today 00:20 IST
+      status: 'PLACED',
+      items: [{ name: 'Naan', price: 40, quantity: 2 }],
+    },
+    {
+      createdAt: '2026-10-11T17:00:00.000Z', // today 22:30 IST, CANCELLED
+      status: 'CANCELLED',
+      items: [{ name: 'Naan', price: 40, quantity: 100 }],
+    },
+    {
+      createdAt: '2026-10-10T18:29:00.000Z', // yesterday IST -> ignored
+      status: 'COMPLETED',
+      items: [{ name: 'Yesterday Special', price: 1, quantity: 999 }],
+    },
+  ];
+  const popular = computeTodayPopularItems(orders, now, 5);
+  assert.equal(popular.length, 2);
+  assert.equal(popular[0].name, 'Naan');
+  assert.equal(popular[0].quantitySold, 5); // 3 + 2; the 100 from the cancelled order is excluded
+  assert.equal(popular[1].name, 'Butter Chicken');
+  assert.equal(popular[1].quantitySold, 2);
+});
+
+test('computeTodayPopularItems returns empty for empty/non-array input', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  assert.deepEqual(computeTodayPopularItems([], now, 5), []);
+  assert.deepEqual(computeTodayPopularItems(null, now, 5), []);
+});
+
+test('low-stock threshold: above 30 excluded, exactly 30 and below included', () => {
+  assert.equal(
+    hasLowRemainingStock({ name: 'A', isActive: true, remainingPercent: 31 }),
+    false,
+  );
+  assert.equal(
+    hasLowRemainingStock({ name: 'B', isActive: true, remainingPercent: 30 }),
+    true,
+  );
+  assert.equal(
+    hasLowRemainingStock({ name: 'C', isActive: true, remainingPercent: 29.5 }),
+    true,
+  );
+  assert.equal(
+    hasLowRemainingStock({ name: 'C2', isActive: true, remainingPercent: 0 }),
+    true,
+  );
+});
+
+test('low-stock threshold: inactive and items without a baseline never alert', () => {
+  assert.equal(
+    hasLowRemainingStock({ name: 'D', isActive: false, remainingPercent: 20 }),
+    false,
+  );
+  assert.equal(
+    hasLowRemainingStock({ name: 'E', isActive: true, remainingPercent: null }),
+    false,
+  );
+  assert.equal(hasLowRemainingStock({ name: 'F', isActive: true }), false);
+  assert.equal(hasLowRemainingStock(null), false);
+});
+
+test('low-stock threshold: active default (missing isActive) and numeric strings', () => {
+  // Legacy/raw rows may lack isActive; treat them as active (model default true).
+  assert.equal(hasLowRemainingStock({ name: 'G', remainingPercent: 20 }), true);
+  // The API returns numbers; a numeric string is not accepted.
+  assert.equal(hasLowRemainingStock({ name: 'H', isActive: true, remainingPercent: '30' }), false);
+});
+
+test('low-stock threshold honours an explicit max remaining percent', () => {
+  assert.equal(
+    hasLowRemainingStock({ name: 'I', isActive: true, remainingPercent: 35 }, 40),
+    true,
+  );
+  assert.equal(
+    hasLowRemainingStock({ name: 'J', isActive: true, remainingPercent: 35 }, 30),
+    false,
+  );
+});
+
+test('filterLowStockAlerts keeps only active 30%-or-less rows and tolerates bad input', () => {
+  const rows = [
+    { name: 'A', isActive: true, remainingPercent: 40 },
+    { name: 'B', isActive: true, remainingPercent: 30 },
+    { name: 'C', isActive: true, remainingPercent: 12 },
+    { name: 'D', isActive: false, remainingPercent: 10 },
+    { name: 'E', isActive: true, remainingPercent: null },
+    null,
+  ];
+  const alerts = filterLowStockAlerts(rows);
+  assert.equal(alerts.length, 2);
+  assert.equal(alerts[0].name, 'B');
+  assert.equal(alerts[1].name, 'C');
+  assert.deepEqual(filterLowStockAlerts(null), []);
+  assert.deepEqual(filterLowStockAlerts('nope'), []);
+});
+
 test('formatCurrency/formatNumber do not emit NaN', () => {
   assert.equal(formatNumber(0), '0');
   assert.equal(formatNumber('bad'), '0');
@@ -199,9 +375,4 @@ test('formatCurrency/formatNumber do not emit NaN', () => {
   assert.equal(formatNumber(1234567), '1,234,567');
   assert.equal(formatCurrency(undefined), '\u20B90');
   assert.equal(formatCurrency(2500), '\u20B92,500');
-});
-
-test('localDateKey formats local calendar dates with zero padding', () => {
-  assert.equal(localDateKey(new Date(2026, 0, 5)), '2026-01-05');
-  assert.equal(localDateKey(new Date(2026, 11, 31)), '2026-12-31');
 });

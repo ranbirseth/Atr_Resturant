@@ -62,7 +62,15 @@ const billOrderSchema = new mongoose.Schema(
         orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
         orderNo: { type: String, default: '' },
         statusAtCapture: { type: String, default: '' },
+        // `totalPaise` keeps its Phase 2B meaning: the ORIGINAL captured order
+        // total. `originalTotalPaise` mirrors it for the additive P1.3 contract;
+        // `billedTotalPaise` is the independently priced total for this order's
+        // lines (falls back to the original for legacy/verbatim snapshots).
         totalPaise: { type: Number, default: 0 },
+        originalTotalPaise: { type: Number, default: null },
+        billedTotalPaise: { type: Number, default: null },
+        discountPaise: { type: Number, default: 0, min: 0 },
+        couponCode: { type: String, default: '' },
         lines: { type: [billLineSchema], default: [] },
     },
     { _id: false },
@@ -71,10 +79,25 @@ const billOrderSchema = new mongoose.Schema(
 const billSchema = new mongoose.Schema(
     {
         billNumber: { type: String, required: true },
-        sessionId: { type: String, required: true, index: true },
-        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        // SESSION bills carry the source session; POS bills are direct checkouts
+        // with no customer session/order (rule E) - both are optional now and
+        // default to null. Loosening required flags is non-destructive to
+        // existing documents.
+        sessionId: { type: String, default: null, index: true },
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        // P1.3 additive fields (backward-compatible: absent on legacy docs).
+        origin: { type: String, enum: ['SESSION', 'POS'], default: 'SESSION' },
+        audience: { type: String, enum: ['CUSTOMER', 'STAFF'], default: 'CUSTOMER' },
         status: { type: String, enum: BILL_STATUSES, default: 'OPEN', index: true },
         orders: { type: [billOrderSchema], default: [] },
+        // Canonical billed line snapshot for both origins (POS uses this; the
+        // SESSION contract mirrors the per-order lines here too).
+        lines: { type: [billLineSchema], default: [] },
+        // Independently priced subtotal (current menu prices), the preserved
+        // coupon discount, and the final payable total = subtotal - discount.
+        subtotalPaise: { type: Number, default: 0, min: 0 },
+        discountPaise: { type: Number, default: 0, min: 0 },
+        couponCode: { type: String, default: '' },
         totalPaise: { type: Number, required: true, min: 0 },
         amountPaidPaise: { type: Number, default: 0, min: 0 },
         balanceDuePaise: { type: Number, required: true, min: 0 },
@@ -83,6 +106,13 @@ const billSchema = new mongoose.Schema(
         voidReason: { type: String, default: null },
         voidRequestedAt: { type: Date, default: null },
         voidedAt: { type: Date, default: null },
+        // Creation idempotency (rule E). No default so the field is ABSENT on
+        // non-idempotent bills, which is required for the sparse-unique index to
+        // ignore them (an explicit null WOULD be indexed and collide).
+        idempotencyKey: { type: String },
+        requestHash: { type: String },
+        createdBy: { type: String, default: '' },
+        voidedBy: { type: String, default: '' },
     },
     { timestamps: true },
 );
@@ -94,6 +124,11 @@ billSchema.index({ billNumber: 1 }, { unique: true });
 billSchema.index({ 'payments.paymentId': 1 }, { unique: true, sparse: true });
 // Covered-orders query (multikey, read-only safety check during capture).
 billSchema.index({ sessionId: 1, status: 1, 'orders.orderId': 1 });
+// P1.3: bill-creation idempotency. Sparse unique so bills without a client key
+// are not indexed (field absent) and never collide.
+billSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
+// P1.3: bill-based analytics + filtered listings.
+billSchema.index({ origin: 1, audience: 1, status: 1, createdAt: -1 });
 
 function notFound() {
     return { ok: false, code: CODES.NOT_FOUND, httpStatus: 404 };
@@ -434,21 +469,60 @@ billSchema.statics.resumeBill = async function resumeBill(billId, now = new Date
     return this.resumeReversals(billId, now);
 };
 
-// Create a bill with a pre-generated _id/billNumber (locks already acquired).
-billSchema.statics.createBillRecord = async function createBillRecord({ billId, billNumber, sessionId, userId, orders, totalPaise }) {
-    const bill = await this.create({
+// Create a bill with a pre-generated _id/billNumber. SESSION bills pass the
+// covered order snapshots + acquired locks; POS bills pass origin:'POS',
+// sessionId:null, userId:null and an empty orders array (no fabricated order).
+billSchema.statics.createBillRecord = async function createBillRecord(input) {
+    const {
+        billId,
+        billNumber,
+        sessionId = null,
+        userId = null,
+        orders = [],
+        lines = [],
+        totalPaise,
+        subtotalPaise,
+        discountPaise = 0,
+        couponCode = '',
+        origin = 'SESSION',
+        audience = 'CUSTOMER',
+        idempotencyKey,
+        requestHash,
+        createdBy = '',
+    } = input;
+    const subtotal = subtotalPaise === undefined || subtotalPaise === null ? totalPaise : subtotalPaise;
+
+    const doc = {
         _id: billId,
         billNumber,
         sessionId,
         userId,
         status: 'OPEN',
+        origin,
+        audience,
         orders,
+        lines,
+        subtotalPaise: subtotal,
+        discountPaise,
+        couponCode,
         totalPaise,
         amountPaidPaise: 0,
         balanceDuePaise: totalPaise,
         payments: [],
-    });
+        createdBy,
+    };
+    // Only set the idempotency fields when a key is supplied so the sparse
+    // unique index ignores all other bills (field genuinely absent).
+    if (idempotencyKey) {
+        doc.idempotencyKey = idempotencyKey;
+        doc.requestHash = requestHash || null;
+    }
+    const bill = await this.create(doc);
     return bill;
+};
+
+billSchema.statics.findByIdempotencyKey = function findByIdempotencyKey(key) {
+    return this.findOne({ idempotencyKey: key });
 };
 
 billSchema.statics.getSessionBills = async function getSessionBills(sessionId, sort = { createdAt: -1 }) {

@@ -8,7 +8,22 @@
 // accepts and returns RUPEES (amount / 100). Conversion is the only place
 // floats are touched, so balances never accumulate float dust.
 
+const crypto = require('crypto');
+const {
+    buildAuthoritativeOrder,
+    categoryKey,
+} = require('./menuUtils');
+
 const BILL_STATUSES = ['OPEN', 'SETTLED', 'VOIDING', 'VOID'];
+// P1.3: revenue-recognized (generated) statuses vs explicitly separated voided
+// statuses. The owner decided OPEN bills count as revenue as soon as generated.
+const RECOGNIZED_BILL_STATUSES = ['OPEN', 'SETTLED'];
+const VOIDED_BILL_STATUSES = ['VOIDING', 'VOID'];
+// Asia/Kolkata is a fixed UTC+05:30 offset (no DST), so date-only analytics
+// ranges can be resolved without a timezone library.
+const IST_UTC_OFFSET_MINUTES = 5 * 60 + 30;
+const IST_OFFSET_ISO = '+05:30';
+const AUDIENCES = ['CUSTOMER', 'STAFF'];
 const PAYMENT_METHODS = ['CASH', 'UPI', 'CARD', 'WALLET', 'OTHER'];
 const PAYMENT_STATUSES = ['RECORDED', 'REVERSING', 'REVERSED'];
 const LOCK_PURPOSES = ['BILL', 'TRANSITION'];
@@ -251,6 +266,224 @@ function assertPaymentConsistency(bill) {
     return { ok: issues.length === 0, issues };
 }
 
+// ---------------------------------------------------------------------------
+// P1.3 helpers: independent pricing, coupon preservation, idempotency hashing
+// and IST analytics-range resolution.
+// ---------------------------------------------------------------------------
+
+// STRICT audience parse for requests that must choose one. Returns null when the
+// value is missing/blank/not CUSTOMER|STAFF (callers map null -> 400).
+function parseAudience(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+    const normalized = String(value).trim().toUpperCase();
+    return AUDIENCES.includes(normalized) ? normalized : null;
+}
+
+// Canonical audience for a stored order (missing/legacy -> CUSTOMER).
+function orderAudience(value) {
+    const parsed = parseAudience(value);
+    return parsed || 'CUSTOMER';
+}
+
+// Detect a session whose orders span both audiences (rule C: reject mixed).
+function detectMixedAudience(orders) {
+    const list = Array.isArray(orders) ? orders : [];
+    let audience = null;
+    for (let i = 0; i < list.length; i++) {
+        const current = orderAudience(list[i] && list[i].audience);
+        if (audience === null) {
+            audience = current;
+        } else if (audience !== current) {
+            return { mixed: true, audience: null };
+        }
+    }
+    return { mixed: false, audience: audience || 'CUSTOMER' };
+}
+
+// Independently price requested items from scratch at the CURRENT menu prices
+// for the chosen audience. Wraps the shared authoritative builder and converts
+// the rupee subtotal to integer paise. Never trusts client prices.
+function priceLinesForAudience(options) {
+    const result = buildAuthoritativeOrder({
+        audience: options && options.audience,
+        requestedItems: options && options.requestedItems,
+        dbItems: options && options.dbItems,
+        hiddenCategories: options && options.hiddenCategories,
+    });
+    if (!result.ok) {
+        return {
+            ok: false,
+            status: result.status || 400,
+            message: result.message || 'Invalid order items',
+            errors: result.errors || [],
+            audience: result.audience,
+            lines: [],
+            subtotalPaise: 0,
+        };
+    }
+    const lines = result.lines.map(function (line) {
+        const pricePaise = rupeesToPaisa(line.price);
+        const safePrice = pricePaise === null ? 0 : pricePaise;
+        const quantity = toFiniteNumber(line.quantity) || 0;
+        return {
+            itemId: line.itemId ? String(line.itemId) : null,
+            name: line.name || '',
+            quantity: quantity,
+            pricePaise: safePrice,
+            linePaise: Math.round(safePrice * quantity),
+            customizations: Array.isArray(line.customizations) ? line.customizations : [],
+        };
+    });
+    const subtotalPaise = lines.reduce(function (sum, line) {
+        return sum + line.linePaise;
+    }, 0);
+    return { ok: true, status: 200, lines, subtotalPaise, audience: result.audience };
+}
+
+// Apply a preserved coupon discount to a freshly-priced subtotal. The discount
+// is clamped so the payable total is never negative and the discount never
+// exceeds the subtotal. Returns integer paise.
+function applyPreservedDiscount(subtotalPaise, preservedDiscountPaise) {
+    const subtotal = Math.max(0, Math.round(toFiniteNumber(subtotalPaise) || 0));
+    const requested = Math.max(0, Math.round(toFiniteNumber(preservedDiscountPaise) || 0));
+    const discountPaise = Math.min(subtotal, requested);
+    return { subtotalPaise: subtotal, discountPaise: discountPaise, totalPaise: subtotal - discountPaise };
+}
+
+// Deterministic JSON so identical payloads always hash identically regardless
+// of key insertion order.
+function stableStringify(value) {
+    if (value === null || typeof value !== 'object') {
+        return JSON.stringify(value === undefined ? null : value);
+    }
+    if (Array.isArray(value)) {
+        return '[' + value.map(stableStringify).join(',') + ']';
+    }
+    const keys = Object.keys(value).sort();
+    return '{' + keys
+        .map(function (key) {
+            return JSON.stringify(key) + ':' + stableStringify(value[key]);
+        })
+        .join(',') + '}';
+}
+
+// sha256 over a namespaced canonical payload. Persisted so a reused key with a
+// different payload can be distinguished from a safe retry (rule E).
+function computeRequestHash(kind, payload) {
+    const canonical = stableStringify({ kind: kind, payload: payload });
+    return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
+// Canonical POS item list for hashing/validation: string itemIds, integer
+// quantities, sorted customizations. Order of items is preserved.
+function canonicalizePosItems(items) {
+    const list = Array.isArray(items) ? items : [];
+    return list.map(function (item) {
+        return {
+            itemId: item && item.itemId !== undefined && item.itemId !== null ? String(item.itemId).trim() : '',
+            quantity: toFiniteNumber(item && item.quantity),
+            customizations: Array.isArray(item && item.customizations)
+                ? item.customizations
+                      .filter(function (value) {
+                          return typeof value === 'string' && value.trim() !== '';
+                      })
+                      .map(function (value) {
+                          return value.trim();
+                      })
+                : [],
+        };
+    });
+}
+
+// Canonical session order-id list for hashing. Accepts an array of ids.
+function canonicalizeSessionOrderIds(orderIds) {
+    const list = Array.isArray(orderIds) ? orderIds : [];
+    return list.map(function (id) {
+        return id !== undefined && id !== null ? String(id) : '';
+    });
+}
+
+// Parse a single analytics boundary. Date-only values are resolved in IST
+// (Asia/Kolkata, fixed UTC+05:30): `from` = 00:00:00.000 IST, `to` =
+// 23:59:59.999 IST (inclusive end-of-day). Full timestamps are honored; a
+// timestamp without an explicit offset is interpreted as IST.
+function parseIstBoundary(value, isEnd) {
+    if (typeof value !== 'string' || value.trim() === '') {
+        return null;
+    }
+    const raw = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const parts = raw.split('-').map(Number);
+        const utcMidnight = Date.UTC(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+        const check = new Date(utcMidnight);
+        if (
+            check.getUTCFullYear() !== parts[0] ||
+            check.getUTCMonth() !== parts[1] - 1 ||
+            check.getUTCDate() !== parts[2]
+        ) {
+            return null;
+        }
+        const base = utcMidnight - IST_UTC_OFFSET_MINUTES * 60 * 1000;
+        return new Date(isEnd ? base + 24 * 60 * 60 * 1000 - 1 : base);
+    }
+    const hasOffset = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(raw);
+    const parsed = new Date(hasOffset ? raw : raw + IST_OFFSET_ISO);
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+    return parsed;
+}
+
+// Resolve the optional analytics window into concrete UTC Date boundaries.
+function resolveAnalyticsRange(query) {
+    const src = query || {};
+    const errors = [];
+    const hasFrom = src.from !== undefined && src.from !== null && String(src.from).trim() !== '';
+    const hasTo = src.to !== undefined && src.to !== null && String(src.to).trim() !== '';
+    const from = hasFrom ? parseIstBoundary(src.from, false) : null;
+    const to = hasTo ? parseIstBoundary(src.to, true) : null;
+    if (hasFrom && from === null) {
+        errors.push('from must be a valid date (YYYY-MM-DD) or ISO timestamp');
+    }
+    if (hasTo && to === null) {
+        errors.push('to must be a valid date (YYYY-MM-DD) or ISO timestamp');
+    }
+    if (from && to && from.getTime() > to.getTime()) {
+        errors.push('from must be on or before to');
+    }
+    return { errors: errors, from: from, to: to };
+}
+
+// Build the Mongo match for bill analytics. Legacy bills predate origin/audience
+// and are treated as SESSION/CUSTOMER, so a null/absent field matches those
+// filters via `$in: [value, null]` (Mongo's null also matches missing).
+function buildBillAnalyticsMatch(options) {
+    const opts = options || {};
+    const conditions = [];
+    if (opts.from) {
+        conditions.push({ createdAt: { $gte: opts.from } });
+    }
+    if (opts.to) {
+        conditions.push({ createdAt: { $lte: opts.to } });
+    }
+    if (opts.origin === 'POS') {
+        conditions.push({ origin: 'POS' });
+    } else if (opts.origin === 'SESSION') {
+        conditions.push({ origin: { $in: ['SESSION', null] } });
+    }
+    if (opts.audience === 'STAFF') {
+        conditions.push({ audience: 'STAFF' });
+    } else if (opts.audience === 'CUSTOMER') {
+        conditions.push({ audience: { $in: ['CUSTOMER', null] } });
+    }
+    if (conditions.length === 0) {
+        return {};
+    }
+    return conditions.length === 1 ? conditions[0] : { $and: conditions };
+}
+
 // PII-free API representation. Billing responses deliberately omit customer
 // name/contact/address (owner decision) and convert paise to rupees.
 function toBillDTO(bill) {
@@ -292,7 +525,23 @@ function toBillDTO(bill) {
                   orderNo: o.orderNo,
                   statusAtCapture: o.statusAtCapture,
                   total: paisaToRupees(o.totalPaise),
+                  originalTotal: paisaToRupees(o.originalTotalPaise),
+                  billedTotal: paisaToRupees(o.billedTotalPaise),
+                  discount: paisaToRupees(o.discountPaise),
+                  couponCode: o.couponCode || '',
                   items: lines,
+              };
+          })
+        : [];
+    const billLines = Array.isArray(bill.lines)
+        ? bill.lines.map(function (line) {
+              return {
+                  itemId: line.itemId,
+                  name: line.name,
+                  quantity: line.quantity,
+                  price: paisaToRupees(line.pricePaise),
+                  total: paisaToRupees(line.linePaise),
+                  customizations: line.customizations || [],
               };
           })
         : [];
@@ -301,16 +550,24 @@ function toBillDTO(bill) {
         billNumber: bill.billNumber,
         sessionId: bill.sessionId,
         userId: bill.userId ? String(bill.userId) : null,
+        origin: bill.origin || 'SESSION',
+        audience: bill.audience || 'CUSTOMER',
         status: bill.status,
         paymentStatus: derivePaymentStatus(bill),
+        subtotal: paisaToRupees(bill.subtotalPaise),
+        discount: paisaToRupees(bill.discountPaise),
+        couponCode: bill.couponCode || '',
         totalAmount: paisaToRupees(bill.totalPaise),
         amountPaid: paisaToRupees(bill.amountPaidPaise),
         balanceDue: paisaToRupees(bill.balanceDuePaise),
         orderCount: orders.length,
         orders: orders,
+        lines: billLines,
         payments: payments,
+        createdBy: bill.createdBy || '',
         settledAt: bill.settledAt || null,
         voidReason: bill.voidReason || null,
+        voidedBy: bill.voidedBy || '',
         voidRequestedAt: bill.voidRequestedAt || null,
         voidedAt: bill.voidedAt || null,
         createdAt: bill.createdAt,
@@ -320,6 +577,9 @@ function toBillDTO(bill) {
 
 module.exports = {
     BILL_STATUSES,
+    RECOGNIZED_BILL_STATUSES,
+    VOIDED_BILL_STATUSES,
+    AUDIENCES,
     PAYMENT_METHODS,
     PAYMENT_STATUSES,
     LOCK_PURPOSES,
@@ -339,5 +599,17 @@ module.exports = {
     sumNonReversedPaise,
     derivePaymentStatus,
     assertPaymentConsistency,
+    parseAudience,
+    orderAudience,
+    detectMixedAudience,
+    priceLinesForAudience,
+    applyPreservedDiscount,
+    stableStringify,
+    computeRequestHash,
+    canonicalizePosItems,
+    canonicalizeSessionOrderIds,
+    parseIstBoundary,
+    resolveAnalyticsRange,
+    buildBillAnalyticsMatch,
     toBillDTO,
 };

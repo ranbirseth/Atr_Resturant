@@ -13,11 +13,43 @@ export async function getSessionBills(sessionId) {
   return Array.isArray(data) ? data : [];
 }
 
-export async function generateSessionBill(sessionId) {
+// Captures the session's billable orders into an immutable bill. The audience
+// (CUSTOMER | STAFF) is required by the checkout UI so the server applies the
+// agreed pricing and rejects mixed-audience sessions / audience mismatches. An
+// optional idempotencyKey honours the server's same-key/same-payload contract.
+export async function generateSessionBill(sessionId, options) {
   if (!sessionId) {
     throw new Error('generateSessionBill requires a sessionId');
   }
-  return api.post(`/billing/sessions/${encodeURIComponent(sessionId)}/bills`, {});
+  const opts = options || {};
+  const body = {};
+  if (opts.audience !== undefined && opts.audience !== null && String(opts.audience).trim() !== '') {
+    body.audience = opts.audience;
+  }
+  if (opts.idempotencyKey !== undefined && opts.idempotencyKey !== null && String(opts.idempotencyKey).trim() !== '') {
+    body.idempotencyKey = opts.idempotencyKey;
+  }
+  return api.post(`/billing/sessions/${encodeURIComponent(sessionId)}/bills`, body);
+}
+
+// Direct POS bill for the tablet counter (origin POS). The audience is required
+// and server-authoritative: the client only sends item ids + quantities, never
+// prices or totals. A fresh idempotencyKey per checkout is required.
+export async function createPosBill(audience, items, idempotencyKey) {
+  if (audience !== 'CUSTOMER' && audience !== 'STAFF') {
+    throw new Error('createPosBill requires an audience of CUSTOMER or STAFF');
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('createPosBill requires a non-empty items array');
+  }
+  if (!idempotencyKey || String(idempotencyKey).trim() === '') {
+    throw new Error('createPosBill requires an idempotencyKey');
+  }
+  return api.post('/billing/pos/bills', {
+    audience,
+    items,
+    idempotencyKey: String(idempotencyKey).trim(),
+  });
 }
 
 export async function getBillById(billId) {
@@ -25,6 +57,14 @@ export async function getBillById(billId) {
     throw new Error('getBillById requires a billId');
   }
   return api.get(`/billing/bills/${encodeURIComponent(billId)}`);
+}
+
+// Read-only bill listing for the Reviews & Analytics module (Phase 3). Returns
+// every bill as a PII-free DTO sorted newest first; IST range / origin /
+// audience / status filtering happens client-side from the returned array.
+export async function getBills() {
+  const data = await api.get('/billing/bills');
+  return Array.isArray(data) ? data : [];
 }
 
 export async function recordPayment(billId, payload) {

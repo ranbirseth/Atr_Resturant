@@ -36,6 +36,12 @@ import {
   reversePayment as reversePaymentApi,
   voidBill as voidBillApi,
 } from '../../api/billService';
+import {
+  AUDIENCES,
+  audienceLabel,
+  makeIdempotencyKey,
+  normalizeAudience,
+} from '../../utils/audienceBilling';
 
 function chip(palette, label) {
   return (
@@ -96,6 +102,14 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
   const [reversingId, setReversingId] = useState(null);
   const [amountText, setAmountText] = useState('');
   const [method, setMethod] = useState(PAYMENT_METHODS[0]);
+  // Audience is mandatory for a new session bill; the modal is remounted per
+  // session (key in OrdersScreen) so the choice never leaks between sessions.
+  const [audience, setAudience] = useState(null);
+  // One idempotency reference per session lifetime (the modal remounts per
+  // session), preserving the server's same-key/same-payload contract.
+  const [sessionKey] = useState(function () {
+    return makeIdempotencyKey('sess');
+  });
 
   const handleBillChange = useCallback(
     function (next) {
@@ -148,10 +162,18 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
       if (!sessionId || generating) {
         return;
       }
+      const selected = normalizeAudience(audience);
+      if (selected === null) {
+        setError('Select who this bill is for (Customer or Staff).');
+        return;
+      }
       setGenerating(true);
       setError(null);
       try {
-        const next = await generateSessionBill(sessionId);
+        const next = await generateSessionBill(sessionId, {
+          audience: selected,
+          idempotencyKey: sessionKey,
+        });
         handleBillChange(next);
       } catch (e) {
         const data = e && e.data;
@@ -164,7 +186,7 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
         setGenerating(false);
       }
     },
-    [sessionId, generating, handleBillChange],
+    [sessionId, generating, audience, sessionKey, handleBillChange],
   );
 
   const handlePay = useCallback(
@@ -279,6 +301,7 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
   );
 
   const billableCount = countBillableOrders(session && session.orders);
+  const selectedAudience = normalizeAudience(audience);
   const billStyle = bill && billStatusStyle(bill.status);
   const payStyle = bill && paymentStatusStyle(bill.paymentStatus, bill);
   const payments = bill && Array.isArray(bill.payments) ? bill.payments : [];
@@ -324,12 +347,42 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
                     Billing captures every current order ({billableCount} eligible) into a bill that
                     blocks cancel/change and tracks payments.
                   </Text>
+
+                  <Text style={styles.audienceLabel}>Who is this bill for?</Text>
+                  <View style={styles.methodRow}>
+                    {AUDIENCES.map(function (value) {
+                      const active = selectedAudience === value;
+                      return (
+                        <Pressable
+                          key={value}
+                          style={[styles.methodChip, active && styles.methodChipActive]}
+                          onPress={() => {
+                            setAudience(value);
+                            setError(null);
+                          }}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
+                          accessibilityLabel={'Bill for ' + audienceLabel(value)}>
+                          <Text
+                            style={[styles.methodChipText, active && styles.methodChipTextActive]}>
+                            {audienceLabel(value)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Text style={styles.mutedText}>
+                    {selectedAudience
+                      ? audienceLabel(selectedAudience) + ' pricing is applied by the server.'
+                      : 'Select Customer or Staff to enable bill creation.'}
+                  </Text>
                 </View>
                 <Pressable
-                  disabled={generating || billableCount === 0}
+                  disabled={generating || billableCount === 0 || selectedAudience === null}
                   style={[
                     styles.primaryBtn,
-                    (generating || billableCount === 0) && styles.btnDisabled,
+                    (generating || billableCount === 0 || selectedAudience === null) &&
+                      styles.btnDisabled,
                   ]}
                   onPress={handleGenerate}>
                   <Text style={styles.primaryText}>
@@ -337,7 +390,9 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
                       ? 'Generating...'
                       : billableCount === 0
                         ? 'No orders to bill'
-                        : 'Generate Bill'}
+                        : selectedAudience === null
+                          ? 'Select Customer or Staff'
+                          : 'Generate Bill'}
                   </Text>
                 </Pressable>
               </View>
@@ -354,6 +409,10 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
                   {bill.voidReason ? (
                     <Text style={styles.voidReason}>{'Void reason: ' + bill.voidReason}</Text>
                   ) : null}
+                  <Text style={styles.audienceNote}>
+                    For {audienceLabel(bill.audience) || 'Customer'} {'\u00b7'}{' '}
+                    {bill.origin === 'POS' ? 'counter' : 'session'} pricing
+                  </Text>
                   <View style={styles.totalLines}>
                     <View style={styles.totalLine}>
                       <Text style={styles.totalLineLabel}>Total</Text>
@@ -529,6 +588,19 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     marginTop: SPACING.sm,
     lineHeight: 18,
+  },
+  audienceLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginTop: SPACING.md,
+  },
+  audienceNote: {
+    fontSize: 12,
+    color: COLORS.muted,
+    marginTop: SPACING.sm,
   },
   infoCard: {
     backgroundColor: COLORS.surface,

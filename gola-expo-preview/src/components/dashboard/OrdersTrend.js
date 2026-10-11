@@ -1,44 +1,52 @@
 import React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {COLORS, RADIUS, SPACING} from '../../theme';
+import {formatCurrency, toNumber} from '../../utils/dashboardMetrics';
 
 const MAX_BAR_HEIGHT = 120;
 
-// Native View bars: no chart library, Expo Go safe.
 export default function OrdersTrend({data}) {
   const safe = Array.isArray(data) ? data : [];
-  const maxCount = safe.reduce(function (max, day) {
-    return Math.max(max, Number(day && day.count) || 0);
+  const maxCount = safe.reduce(function (max, hour) {
+    return Math.max(max, toNumber(hour && hour.count));
   }, 0);
-  const total = safe.reduce(function (sum, day) {
-    return sum + (Number(day && day.count) || 0);
+  const totalOrders = safe.reduce(function (sum, hour) {
+    return sum + toNumber(hour && hour.count);
+  }, 0);
+  const totalRevenue = safe.reduce(function (sum, hour) {
+    return sum + toNumber(hour && hour.revenue);
   }, 0);
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Orders Trend</Text>
-      <Text style={styles.subtitle}>Daily order count for the last 7 days</Text>
+      <Text style={styles.title}>Today&apos;s Trend</Text>
+      <Text style={styles.subtitle}>Orders &amp; revenue by hour (IST)</Text>
 
       {safe.length === 0 ? (
-        <Text style={styles.empty}>No order data available.</Text>
+        <Text style={styles.empty}>No trend data available.</Text>
       ) : (
         <>
-          {total === 0 ? (
-            <Text style={styles.empty}>No orders in the last 7 days.</Text>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryText}>
+              {formatCurrency(totalRevenue)} revenue
+            </Text>
+            <Text style={styles.summaryText}>{totalOrders} orders</Text>
+          </View>
+          {totalOrders === 0 ? (
+            <Text style={styles.empty}>No orders today yet.</Text>
           ) : null}
           <View style={styles.chart}>
-            {safe.map(function (day) {
-              const count = Number(day && day.count) || 0;
+            {safe.map(function (hour) {
+              const count = toNumber(hour && hour.count);
               const ratio = maxCount > 0 ? count / maxCount : 0;
               const height = Math.max(0, ratio * MAX_BAR_HEIGHT);
               return (
-                <View key={day.key} style={styles.column}>
+                <View key={hour.key} style={styles.column}>
                   <Text style={styles.count}>{count}</Text>
                   <View style={styles.track}>
                     <View style={[styles.bar, {height: height}]} />
                   </View>
-                  <Text style={styles.dayLabel}>{day.label}</Text>
-                  <Text style={styles.dateLabel}>{day.dayOfMonth}</Text>
+                  <Text style={styles.hourLabel}>{hour.label}</Text>
                 </View>
               );
             })}
@@ -72,6 +80,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.muted,
   },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: SPACING.md,
+  },
+  summaryText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.accent,
+  },
   empty: {
     marginTop: SPACING.md,
     fontSize: 13,
@@ -89,14 +107,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   count: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: COLORS.text,
     marginBottom: SPACING.xs,
   },
   track: {
     height: MAX_BAR_HEIGHT,
-    width: '58%',
+    width: '62%',
     justifyContent: 'flex-end',
     backgroundColor: COLORS.barTrack,
     borderRadius: RADIUS.sm,
@@ -107,14 +125,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bar,
     borderRadius: RADIUS.sm,
   },
-  dayLabel: {
+  hourLabel: {
     marginTop: SPACING.sm,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
     color: COLORS.text,
-  },
-  dateLabel: {
-    fontSize: 11,
-    color: COLORS.muted,
   },
 });

@@ -16,6 +16,7 @@ Central index for all audits, investigations, and reports. Reports are read-only
 | 06 | [Inventory Authentication & Implementation Readiness Review (Phase 9A.1)](audits/inventory-auth-readiness-review.md) | 2026-10-10 | Admin auth audit, server-validated session design, deployment/DB readiness, inventory schema/API deltas; no implementation | **READY FOR OWNER REVIEW** — audit only |
 | 07 | [Authentication & Inventory Design Review (Phase 9A.2)](audits/inventory-auth-design-review.md) | 2026-10-10 | Auth design review + final Inventory/Stock workflows, data model, usage-cycle rules, owner decisions; no implementation | **READY FOR OWNER REVIEW** — design review only |
 | 08 | [Security Preparation Verification (Phase 9A.3)](audits/inventory-security-verification.md) | 2026-10-10 | Credential rotation/DB-credential verification, dependency compatibility, session/deployment constraints, stock-ledger safety; no implementation | **BLOCKED** — 2 unresolved, 2 unverified; owner actions required |
+| 09 | [P1.3 Design Approval Checklist](audits/p1.3-design-approval-checklist.md) | 2026-10-11 | Read-only review of the P1.3 schema/API & migration-safety plan (`audits/README.md` §C.3) against 10 approval items; the one gap found was corrected in `audits/README.md` §C.3.1; no implementation | Checklist: gaps found; **corrected** — overall `P1.3 DESIGN PLAN READY FOR OWNER REVIEW` |
 
 ---
 
@@ -66,7 +67,8 @@ docs/
 │  ├─ inventory-feature-audit.md               ← report 05 (Phase 9A, audit only)
 │  ├─ inventory-auth-readiness-review.md       ← report 06 (Phase 9A.1, audit only)
 │  ├─ inventory-auth-design-review.md          ← report 07 (Phase 9A.2, design review only)
-│  └─ inventory-security-verification.md        ← report 08 (Phase 9A.3, verification only)
+│  ├─ inventory-security-verification.md        ← report 08 (Phase 9A.3, verification only)
+│  └─ p1.3-design-approval-checklist.md         ← report 09 (P1.3 design approval checklist; read-only)
 └─ implementation/
    ├─ dashboard-implementation.md              ← report I1
    ├─ orders-implementation.md                 ← report I2

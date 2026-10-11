@@ -14,6 +14,9 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 const app = require('../server');
+const Ingredient = require('../models/Ingredient');
+const StockMovement = require('../models/StockMovement');
+const StockCycle = require('../models/StockCycle');
 
 let server;
 let base;
@@ -60,6 +63,14 @@ async function createItem(payload) {
 before(async () => {
     await waitForConnection();
     await mongoose.connection.dropDatabase();
+    // The StockMovement {idempotencyKey} unique-sparse index (and the other
+    // inventory indexes) are load-bearing for the idempotency and concurrency
+    // tests, so rebuild them explicitly after the drop.
+    await Promise.all([
+        Ingredient.syncIndexes(),
+        StockMovement.syncIndexes(),
+        StockCycle.syncIndexes(),
+    ]);
     await new Promise((resolve) => {
         server = app.listen(0, resolve);
     });

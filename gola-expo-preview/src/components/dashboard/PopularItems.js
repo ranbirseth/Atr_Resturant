@@ -11,7 +11,7 @@ export default function PopularItems({items}) {
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Popular Items</Text>
-      <Text style={styles.subtitle}>Top 5 by quantity sold</Text>
+      <Text style={styles.subtitle}>Today&apos;s top 5 by quantity sold</Text>
 
       <View style={styles.headerRow}>
         <Text style={[styles.headerCell, styles.itemCol]}>Item</Text>

@@ -9,3 +9,14 @@ export async function getOrders() {
   }
   return data;
 }
+
+// Low-stock alert rows from the inventory cycle engine
+// (GET /api/inventory/alerts). The dashboard filters these client-side to the
+// active items with <= 30% current-stock remaining.
+export async function getLowStockAlerts() {
+  const data = await api.get('/inventory/alerts');
+  if (!Array.isArray(data)) {
+    throw new Error('Unexpected response from server (expected a list of inventory alerts).');
+  }
+  return data;
+}

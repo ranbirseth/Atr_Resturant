@@ -2,7 +2,7 @@
 
 Live status for the Inventory & Stock build (Phase 10). "Implemented" means working code + tests were completed in `server/` and `gola-expo-preview/`. Design documents are **not** counted as implemented.
 
-Last updated: 2026-10-11
+Last updated: 2026-10-12
 
 ---
 
@@ -502,3 +502,107 @@ See [Phase 1E report](../audits/README.md) (§E.0–E.1). Overall: `IMPLEMENTED 
 **Remaining / blockers:** no physical-tablet or live-endpoint verification (no device tooling); the pre-existing server `/orders/analytics` F6 bug remains open (deliberately not used / not touched); no POS payment/printer work started (stop point of this phase). No blockers.
 
 **Owner review required before any further work.** Full report: `docs/audits/README.md` section C.3.7.
+
+---
+
+## PHASE 4 "UI POLISH" (2026-10-12): KEYBOARD-SAFE FORMS, TREND HOURS, MENU IMAGES, INVENTORY LABELS - COMPLETE
+
+**Status:** IMPLEMENTED in `gola-expo-preview/` + docs. No server source/schema/route/dependency/deploy change; protected directories untouched; existing live endpoints reused only. Bill generation / payment / idempotency / totals / reversal logic untouched. Full report: `docs/audits/README.md` section C.3.8.
+
+**UI issues addressed:**
+1. Keyboard hid form fields — no `KeyboardAvoidingView` existed anywhere in the app.
+2. Dashboard "today's trend" drew all 24 buckets, so few orders looked like empty slivers.
+3. Menu cards showed no item image even though items carry an `image` URL.
+4. Inventory Activity had clutter ("Adjustments", "Total movements", per-item "A").
+
+**Implemented:**
+- New shared `gola-expo-preview/src/components/FormModal.js` (KeyboardAvoidingView + maxHeight card + scrollable keyboard-safe body + pinned footer).
+- Refactored to it (and stripped now-unused imports/styles): `src/screens/Inventory/AddItemModal.js`, `src/screens/Stock/MovementModal.js`, `src/screens/MenuCategories/ItemFormModal.js`, `src/screens/UserCoupons/CouponFormModal.js`, `src/screens/MenuCategories/CategoryFormModal.js` (the last previously had no `ScrollView`).
+- `src/components/orders/BillModal.js` body wrapped in `KeyboardAvoidingView` + `keyboardShouldPersistTaps="handled"` (payment input stays reachable).
+- `src/screens/MenuCategories/MenuManagement.js` FlatList `keyboardShouldPersistTaps="handled"`.
+- `src/utils/dashboardMetrics.js` +`.test.js`: new `populatedTrendHours`; `src/components/dashboard/OrdersTrend.js` renders only populated hours in a horizontal `ScrollView` with single empty state. `buildTodayTrend` (24 IST buckets) unchanged.
+- `src/utils/menuUtils.js` +`.test.js`: new `itemImageUrl`; `src/screens/MenuCategories/MenuManagement.js` gains `MenuCardImage` (Ionicons fallback; `@expo/vector-icons` already a dependency).
+- `src/screens/ReviewsAnalytics/AnalyticsTab.js`: Inventory Activity now shows Stock Added / Restock Events / Consumption Events; removed Adjustments + Total movements rows and the per-item "A" marker; added `"No stock activity in this range."` empty state.
+
+**Files changed (Expo + docs only):** new `gola-expo-preview/src/components/FormModal.js`; `gola-expo-preview/src/screens/{Inventory/AddItemModal.js, Stock/MovementModal.js, MenuCategories/ItemFormModal.js, UserCoupons/CouponFormModal.js, MenuCategories/CategoryFormModal.js, MenuCategories/MenuManagement.js, ReviewsAnalytics/AnalyticsTab.js}`; `gola-expo-preview/src/components/orders/BillModal.js`; `gola-expo-preview/src/components/dashboard/OrdersTrend.js`; `gola-expo-preview/src/utils/{dashboardMetrics.js, dashboardMetrics.test.js, menuUtils.js, menuUtils.test.js}`; `docs/audits/README.md` (§C.3.8), this tracker.
+
+**Test results (exact, 2026-10-12):**
+- `cd gola-expo-preview; node --test src/utils/*.test.js` -> **182/182 pass, 0 fail** (was 176 at phase start; +4 `populatedTrendHours`, +2 `itemImageUrl`).
+- `cd gola-expo-preview; npx expo lint` -> **0 errors, 4 warnings** (all pre-existing: 3 `unicode-bom`, 1 unused catch binding).
+- `cd gola-expo-preview; npx expo export --platform android` -> success (Hermes `.hbc`, 3.9 MB); `dist/` git-ignored and removed afterwards. No tsconfig.json, so typecheck unavailable (unchanged).
+
+**Preserved:** navigation, theme, audience selection, business rules; bill generation/payment/idempotency/totals/reversal untouched; no thermal printing / Bluetooth / QR / auto-print work started.
+
+**Remaining / blockers:** no physical-tablet or live-endpoint verification (no device tooling) — keyboard-avoidance is code-reviewed, not device-tested; `src/utils/analyticsLoadUtils.js` + `.test.js` remain untracked and pre-date this phase. No blockers.
+
+**Owner review required before any further work.** Full report: `docs/audits/README.md` section C.3.8.
+
+---
+
+## PHASE 4.1 "ANDROID APK SCROLLING & BOTTOM-CONTENT VISIBILITY" (2026-10-12): APP-WIDE LAYOUT/SAFE-AREA FIX - COMPLETE
+
+**Status:** IMPLEMENTED in `gola-expo-preview/` + docs. No server source/schema/route/dependency/deploy change; protected directories untouched; existing live endpoints reused only. No API contract, order/menu/category/inventory/stock/user/coupon logic, or bill generation/payment/idempotency/totals/reversal logic touched. Navigation and theme preserved. Full report: `docs/audits/README.md` section C.3.9.
+
+**Root causes (verified):**
+1. No bottom safe-area handling anywhere (`grep` for `SafeAreaView`/`useSafeAreaInsets` across `src/` = zero consumers; only the provider in `App.js`). The app is edge-to-edge on Android and the drawer pads the header but not the screen body, so last list rows / bottom-pinned controls were drawn under the Android navigation/gesture bar. List bottom padding was a fixed `SPACING.xl` (24) / `SPACING.xl * 2` (48).
+2. Bottom-sheet modals capped at `maxHeight: '90%'` had a `ScrollView` with no `flexShrink: 1` (Yoga default `0`), so long content clipped instead of scrolling. `FormModal` already had the fix (Phase 4); `SessionDetailsModal`, `BillModal`, `CreatedBillModal` did not.
+
+**Implemented:**
+- New `gola-expo-preview/src/hooks/useBottomInset.js` (`insets.bottom + extra`).
+- New `gola-expo-preview/src/navigation/ScreenFrame.js` (`SafeAreaView edges={['bottom']}`, `COLORS.background`).
+- `src/navigation/RootNavigator.js`: module-scope `frameScreen` wrapper applied to all 8 drawer screens (stable identity, no remount).
+- `src/components/FormModal.js`: backdrop top/bottom padding now includes `insets.top`/`insets.bottom`.
+- `src/components/orders/SessionDetailsModal.js`, `src/components/orders/BillModal.js`: scroll body `flexShrink: 1` + `insets.bottom` content padding.
+- `src/screens/Billing/CreatedBillModal.js`: backdrop top/bottom insets + scroll body `flexShrink: 1`.
+- `src/screens/Billing/BillingScreen.js`: narrow cart bottom sheet `paddingBottom: SPACING.lg + insets.bottom`.
+
+**Files changed (Expo + docs only):** new `gola-expo-preview/src/hooks/useBottomInset.js`, `gola-expo-preview/src/navigation/ScreenFrame.js`; `gola-expo-preview/src/navigation/RootNavigator.js`, `gola-expo-preview/src/components/FormModal.js`, `gola-expo-preview/src/components/orders/{SessionDetailsModal.js, BillModal.js}`, `gola-expo-preview/src/screens/Billing/{CreatedBillModal.js, BillingScreen.js}`; `docs/audits/README.md` (§C.3.9), this tracker.
+
+**Test results (exact, 2026-10-12):**
+- `cd gola-expo-preview; node --test src/utils/*.test.js` -> **182/182 pass, 0 fail** (unchanged; no new pure helpers).
+- `cd gola-expo-preview; npx expo lint` -> **0 errors, 4 warnings** (all pre-existing: 3 `unicode-bom`, 1 unused catch binding).
+- `cd gola-expo-preview; npx expo export --platform android` -> success (Hermes `.hbc`, 3.9 MB); `dist/` git-ignored and removed afterwards. No tsconfig.json, so typecheck unavailable (unchanged).
+
+**Preserved:** navigation, theme, audience selection, business rules; bill generation/payment/idempotency/totals/reversal untouched; no thermal printing / Bluetooth / QR / auto-print work started.
+
+**Remaining / blockers:** no physical-tablet or live-endpoint verification (no device tooling) - safe-area/`flexShrink` behaviour is code-reviewed, not device-tested. Owner APK smoke test recommended (scroll each list to its end; open Session Details/Billing sheets + every form popup with long content and confirm the bottom is reachable above the Android system bar). No blockers.
+
+**Owner review required before any further work.** Full report: `docs/audits/README.md` section C.3.9.
+
+---
+
+## PHASE 4.2 "INVENTORY ITEM DELETION REQUIREMENT FIX" (2026-10-12): PERMANENT CASCADE DELETE - COMPLETE
+
+**Status:** IMPLEMENTED in `server/` (inventory delete path + its tests) + `gola-expo-preview/` (delete messages) + docs. No auth, no new dependencies, no deploy, no production DB access; protected directories untouched. No business rules changed other than item deletion. Full report: `docs/audits/README.md` section C.3.10.
+
+**Reported symptom (owner):** deleting an inventory item with stock history (e.g. "Suger") silently **archived** it (`isActive=false`) and returned `"..." has stock history (...) so it was archived instead of deleted...`; the item could never be deleted. Requirement updated: confirming Delete must **permanently remove** the item, even with history.
+
+**Audit findings (verified):**
+- `deleteIngredient` (`server/controllers/inventoryController.js`) archived whenever `movementCount>0 || cycleCount>0`; hard-deleted only empty items (cycles then ingredient).
+- `StockMovement.ingredientId` / `StockCycle.ingredientId` are indexed ObjectId refs (`ref 'Ingredient'`), not embedded.
+- `getAnalytics` `totals` come from the whole movement ledger while `items` come from live ingredients, so orphaned movements would inflate totals with no matching item; `reconcile` ignores orphans. Dependents must therefore be deleted with the item.
+- Delete is **not** transactional: deployment/tests use standalone MongoDB (`server/config/db.js`; test URI `mongodb://127.0.0.1:27017/gola_inventory_test`), which does not support multi-document transactions.
+
+**Owner decision (obtained before the destructive change):** "Delete item + its history" — permanently delete the item together with all its `StockMovements` and `StockCycles` (that item's audit history is lost; analytics totals drop by its contribution).
+
+**Implemented:**
+- `server/controllers/inventoryController.js`: `deleteIngredient` now 404s if missing, counts movements/cycles, deletes movements -> cycles -> ingredient **last**, and returns `{ deleted:true, removedMovements, removedCycles, message }`. Archive branch removed; policy + non-transactional constraint documented in comments.
+- `gola-expo-preview/src/api/inventoryService.js`: `deleteIngredient` comment updated to the permanent-cascade contract (no code-path change).
+- `gola-expo-preview/src/screens/Inventory/InventoryScreen.js`: dialog names the item and warns history is permanently deleted/irreversible; `runDelete` always shows `Item deleted` with the server message (no `archived` branch), refreshes on success, and on failure shows the real error without refreshing so the item stays visible. `deletingId` guard / cancel / refresh preserved.
+
+**Files changed (server + Expo + docs only):** `server/controllers/inventoryController.js`, `server/tests/inventory.api.test.js`, `gola-expo-preview/src/api/inventoryService.js`, `gola-expo-preview/src/screens/Inventory/InventoryScreen.js`; `docs/audits/README.md` (§C.3.10), this tracker.
+
+**Test results (exact, 2026-10-12):**
+- `cd server; node --test tests/inventory.api.test.js` -> **24/24 pass, 0 fail**.
+- `cd server; npm test` -> **129/129 pass, 0 fail**.
+- `cd gola-expo-preview; node --test src/utils/*.test.js` -> **182/182 pass, 0 fail**.
+- `cd gola-expo-preview; npx expo lint` -> **0 errors, 4 warnings** (all pre-existing: 3 `unicode-bom`, 1 unused catch binding).
+- `cd gola-expo-preview; npx expo export --platform android` -> success (Hermes `.hbc`, 3.9 MB); `dist/` removed afterwards. No tsconfig.json, so typecheck unavailable (unchanged).
+
+**New/changed tests:** replaced the old "DELETE archives items with history" test with permanent-delete coverage (with movements, and a cycle-only branch), and added idempotent repeat-delete (404), unrelated-item preservation, and analytics-consistency (deleted history leaves `totals` consistent, no dangling `reconcile` mismatch). Pre-existing no-history and unknown-id tests retained; all restock/consumption/unit-cost/idempotency/concurrency regressions still pass.
+
+**Preserved:** stock consumption/restock, unit cost, `idempotencyKey`, movement validation, insufficient-stock protection, low-stock/usage alerts (>=70% consumed), analytics/cycles, and the separate `activate`/`deactivate` soft mechanism (`Archived` pill). No order-driven stock deduction. No API contract change beyond the delete success body (archive body removed).
+
+**Remaining / blockers:** no live-endpoint or physical-device verification (no device/backend tooling); cascade intentionally non-transactional (dependents deleted first; each step idempotent/retryable). `src/utils/analyticsLoadUtils.js` + `.test.js` remain untracked and pre-date this work. No blockers.
+
+**Owner review required before any further work.** Full report: `docs/audits/README.md` section C.3.10.

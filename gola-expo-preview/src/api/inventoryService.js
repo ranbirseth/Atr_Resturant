@@ -53,9 +53,9 @@ export async function setIngredientActive(id, active) {
   return api.post(`/inventory/ingredients/${id}/${active ? 'activate' : 'deactivate'}`, {});
 }
 
-// Safe delete: the backend hard-deletes only items with no stock history;
-// items with movements/cycles are archived (isActive=false) to preserve
-// records. Returns { deleted: true } or { archived: true, message, ingredient }.
+// Permanent delete: the backend removes the item and its stock history
+// (movements and cycles together) regardless of whether history exists.
+// Returns { deleted: true, removedMovements, removedCycles, message }.
 export async function deleteIngredient(id) {
   if (!id) {
     throw new Error('deleteIngredient requires an id');

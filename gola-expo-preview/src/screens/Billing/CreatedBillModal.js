@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import { formatCurrency } from '../../utils/billingUtils';
@@ -22,6 +23,7 @@ function stamp(value) {
 // Confirmation for a POS bill that was created on the server (origin POS). All
 // amounts come from the server DTO, not from the tablet's preview.
 export default function CreatedBillModal({ bill, onClose }) {
+  const insets = useSafeAreaInsets();
   if (!bill) {
     return null;
   }
@@ -30,9 +32,13 @@ export default function CreatedBillModal({ bill, onClose }) {
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <View
+        style={[
+          styles.backdrop,
+          { paddingTop: SPACING.lg + insets.top, paddingBottom: SPACING.lg + insets.bottom },
+        ]}>
         <View style={styles.sheet}>
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
             <Text style={styles.brand}>Gola Restaurant</Text>
             <Text style={styles.title}>Bill Created</Text>
             <Text style={styles.stamp}>{stamp(bill.createdAt)}</Text>
@@ -117,6 +123,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
+  },
+  scroll: {
+    flexShrink: 1,
   },
   content: {
     paddingBottom: SPACING.md,

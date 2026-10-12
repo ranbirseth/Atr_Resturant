@@ -13,8 +13,33 @@ import BillingScreen from '../screens/Billing/BillingScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 import ConnectionStatus from '../components/ConnectionStatus';
 import AppDrawerContent from './AppDrawerContent';
+import ScreenFrame from './ScreenFrame';
 
 const Drawer = createDrawerNavigator();
+
+// Wrap a screen so its content clears the Android bottom navigation/gesture
+// bar. Kept at module scope so the wrapped component identity is stable across
+// renders (avoids remounting the screen).
+function frameScreen(Screen) {
+  function FramedScreen(props) {
+    return (
+      <ScreenFrame>
+        <Screen {...props} />
+      </ScreenFrame>
+    );
+  }
+  FramedScreen.displayName = 'Framed' + (Screen.displayName || Screen.name || 'Screen');
+  return FramedScreen;
+}
+
+const FramedDashboard = frameScreen(DashboardScreen);
+const FramedOrders = frameScreen(OrdersScreen);
+const FramedMenuCategories = frameScreen(MenuCategoriesScreen);
+const FramedInventoryStock = frameScreen(InventoryStockScreen);
+const FramedUserCoupons = frameScreen(UserCouponsScreen);
+const FramedReviewsAnalytics = frameScreen(ReviewsAnalyticsScreen);
+const FramedBilling = frameScreen(BillingScreen);
+const FramedSettings = frameScreen(SettingsScreen);
 
 // The 7 admin sections, opened from the hamburger drawer in the top header.
 export default function RootNavigator() {
@@ -36,7 +61,7 @@ export default function RootNavigator() {
         }}>
         <Drawer.Screen
           name="Dashboard"
-          component={DashboardScreen}
+          component={FramedDashboard}
           options={{
             title: 'Dashboard',
             drawerIcon: ({color, size}) => (
@@ -46,7 +71,7 @@ export default function RootNavigator() {
         />
         <Drawer.Screen
           name="Orders"
-          component={OrdersScreen}
+          component={FramedOrders}
           options={{
             title: 'Orders',
             drawerIcon: ({color, size}) => (
@@ -56,7 +81,7 @@ export default function RootNavigator() {
         />
         <Drawer.Screen
           name="MenuCategories"
-          component={MenuCategoriesScreen}
+          component={FramedMenuCategories}
           options={{
             title: 'Menu & Categories',
             drawerIcon: ({color, size}) => (
@@ -66,7 +91,7 @@ export default function RootNavigator() {
         />
         <Drawer.Screen
           name="InventoryStock"
-          component={InventoryStockScreen}
+          component={FramedInventoryStock}
           options={{
             title: 'Inventory & Stock',
             drawerIcon: ({color, size}) => (
@@ -76,7 +101,7 @@ export default function RootNavigator() {
         />
         <Drawer.Screen
           name="UserCoupons"
-          component={UserCouponsScreen}
+          component={FramedUserCoupons}
           options={{
             title: 'Users & Coupons',
             drawerIcon: ({color, size}) => (
@@ -86,7 +111,7 @@ export default function RootNavigator() {
         />
         <Drawer.Screen
           name="ReviewsAnalytics"
-          component={ReviewsAnalyticsScreen}
+          component={FramedReviewsAnalytics}
           options={{
             title: 'Reviews & Analytics',
             drawerIcon: ({color, size}) => (
@@ -96,7 +121,7 @@ export default function RootNavigator() {
         />
         <Drawer.Screen
           name="Billing"
-          component={BillingScreen}
+          component={FramedBilling}
           options={{
             title: 'Billing',
             drawerIcon: ({color, size}) => (
@@ -106,7 +131,7 @@ export default function RootNavigator() {
         />
         <Drawer.Screen
           name="Settings"
-          component={SettingsScreen}
+          component={FramedSettings}
           options={{
             title: 'Settings',
             drawerIcon: ({color, size}) => (

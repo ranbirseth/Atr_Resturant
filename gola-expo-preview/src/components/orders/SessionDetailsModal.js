@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { COLORS, RADIUS, SPACING } from '../../theme';
+import { useBottomInset } from '../../hooks/useBottomInset';
 import StatusBadge from './StatusBadge';
 import OrderItemRow from './OrderItemRow';
 import { computeSessionTotals, formatCurrency, formatTime } from '../../utils/orderUtils';
@@ -46,6 +47,7 @@ function OrderDetail({ order, index }) {
 export default function SessionDetailsModal({ visible, session, bill, onOpenBill, onClose }) {
   const orders = session && Array.isArray(session.orders) ? session.orders : [];
   const totals = computeSessionTotals(orders);
+  const bottomPad = useBottomInset(SPACING.xl);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -60,7 +62,9 @@ export default function SessionDetailsModal({ visible, session, bill, onOpenBill
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.sheetBody}>
+          <ScrollView
+            style={styles.sheetScroll}
+            contentContainerStyle={[styles.sheetBody, { paddingBottom: bottomPad }]}>
             {session ? (
               <>
                 <View style={styles.customerBox}>
@@ -216,6 +220,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: COLORS.muted,
     fontWeight: '700',
+  },
+  sheetScroll: {
+    flexShrink: 1,
   },
   sheetBody: {
     padding: SPACING.lg,

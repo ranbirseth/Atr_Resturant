@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { COLORS, RADIUS, SPACING } from '../../theme';
+import { useBottomInset } from '../../hooks/useBottomInset';
 import { formatTime } from '../../utils/orderUtils';
 import {
   PAYMENT_METHODS,
@@ -91,6 +94,7 @@ function paymentStatusForRow(payment) {
 
 export default function BillModal({ visible, session, onClose, onChangeBill }) {
   const sessionId = session && session.sessionId;
+  const bottomPad = useBottomInset(SPACING.xl);
   // Remounted per session (key in OrdersScreen), so loading starts true and the
   // fetch below only flips it from its own async callbacks.
   const [loading, setLoading] = useState(true);
@@ -309,7 +313,9 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView
+        style={styles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
             <View style={styles.sheetHeaderText}>
@@ -327,7 +333,10 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.sheetBody}>
+          <ScrollView
+            style={styles.sheetScroll}
+            contentContainerStyle={[styles.sheetBody, { paddingBottom: bottomPad }]}
+            keyboardShouldPersistTaps="handled">
             {error ? (
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>{error}</Text>
@@ -512,7 +521,7 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
             )}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -558,6 +567,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: COLORS.muted,
     fontWeight: '700',
+  },
+  sheetScroll: {
+    flexShrink: 1,
   },
   sheetBody: {
     padding: SPACING.lg,

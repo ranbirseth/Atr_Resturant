@@ -73,6 +73,24 @@ function formatPriceExact(value) {
   return '\u20B9' + parsed.toFixed(2);
 }
 
+// A usable item image URL, or null. React Native's Image can only render a
+// remote URL or a data URI, so anything else (blank, whitespace, a bare
+// filename, an invalid scheme) is treated as "no image" and the caller shows a
+// neutral placeholder. Never mutates the item.
+function itemImageUrl(item) {
+  if (!item || typeof item.image !== 'string') {
+    return null;
+  }
+  const url = item.image.trim();
+  if (!url) {
+    return null;
+  }
+  if (/^https?:\/\//i.test(url) || /^data:image\//i.test(url)) {
+    return url;
+  }
+  return null;
+}
+
 // Price shown for a given audience ('CUSTOMER' | 'STAFF'). CUSTOMER uses the
 // editable customer price; STAFF is always derived (60%, 2dp) and ignores any
 // legacy stored `item.staffPrice`.
@@ -177,6 +195,7 @@ module.exports = {
   categoryKey: categoryKey,
   formatPrice: formatPrice,
   formatPriceExact: formatPriceExact,
+  itemImageUrl: itemImageUrl,
   audiencePrice: audiencePrice,
   filterItems: filterItems,
   itemCountForCategory: itemCountForCategory,

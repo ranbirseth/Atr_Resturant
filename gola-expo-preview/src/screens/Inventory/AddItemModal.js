@@ -1,13 +1,6 @@
 import React, { useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import FormModal from '../../components/FormModal';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import { computeUnitCost, formatPrice, validateAddItemForm } from '../../utils/inventoryUtils';
 
@@ -64,105 +57,76 @@ export default function AddItemModal({ units, saving, serverError, onClose, onSu
   }
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.title}>Add Inventory</Text>
+    <FormModal
+      title="Add Inventory"
+      onRequestClose={onClose}
+      footer={
+        <>
+          <Pressable style={[styles.button, styles.cancel]} onPress={onClose} disabled={saving}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, styles.save, saving && styles.disabled]}
+            onPress={handleSave}
+            disabled={saving}>
+            <Text style={styles.saveText}>{saving ? 'Adding…' : 'Add Inventory'}</Text>
+          </Pressable>
+        </>
+      }>
+      <Field
+        label="Item Name"
+        value={form.name}
+        onChangeText={(text) => setField('name', text)}
+        error={errors.name}
+        placeholder="e.g. Oil"
+      />
 
-          <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
-            <Field
-              label="Item Name"
-              value={form.name}
-              onChangeText={(text) => setField('name', text)}
-              error={errors.name}
-              placeholder="e.g. Oil"
-            />
-
-            <Text style={styles.label}>Measurement Unit</Text>
-            <View style={styles.chips}>
-              {(unitOptions.length ? unitOptions : ['kg', 'g', 'litre', 'ml', 'pieces', 'packets']).map(function (unit) {
-                const active = form.unit === unit;
-                return (
-                  <Pressable
-                    key={unit}
-                    onPress={() => setField('unit', unit)}
-                    style={[styles.chip, active && styles.chipActive]}>
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{unit}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {errors.unit ? <Text style={styles.fieldError}>{errors.unit}</Text> : null}
-
-            <Field
-              label="Total Quantity"
-              value={form.quantity}
-              onChangeText={(text) => setField('quantity', text)}
-              error={errors.quantity}
-              keyboardType="decimal-pad"
-              placeholder="e.g. 10"
-            />
-
-            <Field
-              label="Total Price"
-              value={form.totalPrice}
-              onChangeText={(text) => setField('totalPrice', text)}
-              error={errors.totalPrice}
-              keyboardType="decimal-pad"
-              placeholder="e.g. 1500"
-            />
-
-            {unitCost !== null ? (
-              <Text style={styles.preview}>
-                Per-unit cost: {formatPrice(unitCost)}/{form.unit}
-              </Text>
-            ) : null}
-
-            {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
-          </ScrollView>
-
-          <View style={styles.footer}>
-            <Pressable style={[styles.button, styles.cancel]} onPress={onClose} disabled={saving}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
+      <Text style={styles.label}>Measurement Unit</Text>
+      <View style={styles.chips}>
+        {(unitOptions.length ? unitOptions : ['kg', 'g', 'litre', 'ml', 'pieces', 'packets']).map(function (unit) {
+          const active = form.unit === unit;
+          return (
             <Pressable
-              style={[styles.button, styles.save, saving && styles.disabled]}
-              onPress={handleSave}
-              disabled={saving}>
-              <Text style={styles.saveText}>{saving ? 'Adding…' : 'Add Inventory'}</Text>
+              key={unit}
+              onPress={() => setField('unit', unit)}
+              style={[styles.chip, active && styles.chipActive]}>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{unit}</Text>
             </Pressable>
-          </View>
-        </View>
+          );
+        })}
       </View>
-    </Modal>
+      {errors.unit ? <Text style={styles.fieldError}>{errors.unit}</Text> : null}
+
+      <Field
+        label="Total Quantity"
+        value={form.quantity}
+        onChangeText={(text) => setField('quantity', text)}
+        error={errors.quantity}
+        keyboardType="decimal-pad"
+        placeholder="e.g. 10"
+      />
+
+      <Field
+        label="Total Price"
+        value={form.totalPrice}
+        onChangeText={(text) => setField('totalPrice', text)}
+        error={errors.totalPrice}
+        keyboardType="decimal-pad"
+        placeholder="e.g. 1500"
+      />
+
+      {unitCost !== null ? (
+        <Text style={styles.preview}>
+          Per-unit cost: {formatPrice(unitCost)}/{form.unit}
+        </Text>
+      ) : null}
+
+      {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+    </FormModal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    padding: SPACING.lg,
-  },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    maxHeight: '92%',
-    width: '100%',
-    maxWidth: 560,
-    alignSelf: 'center',
-    overflow: 'hidden',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.text,
-    padding: SPACING.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  body: { padding: SPACING.lg },
   field: { marginBottom: SPACING.md },
   label: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.xs },
   input: {
@@ -191,13 +155,6 @@ const styles = StyleSheet.create({
   chipTextActive: { color: '#ffffff' },
   preview: { fontSize: 13, fontWeight: '700', color: COLORS.revenue, marginTop: SPACING.xs },
   serverError: { marginTop: SPACING.md, color: COLORS.danger, fontSize: 13, fontWeight: '600' },
-  footer: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    padding: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
   button: { flex: 1, paddingVertical: SPACING.md, borderRadius: RADIUS.md, alignItems: 'center' },
   cancel: { backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border },
   cancelText: { color: COLORS.text, fontWeight: '700' },

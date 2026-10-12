@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import StateView from '../../components/menu/StateView';
 import BillPanel from './BillPanel';
@@ -48,6 +49,7 @@ const WIDE_MIN_WIDTH = 900;
 // Customer - and the server remains authoritative for all prices and totals.
 export default function BillingScreen() {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -426,7 +428,7 @@ export default function BillingScreen() {
           animationType="slide"
           onRequestClose={() => setCartModalVisible(false)}>
           <View style={styles.modalBackdrop}>
-            <View style={styles.modalSheet}>
+            <View style={[styles.modalSheet, { paddingBottom: SPACING.lg + insets.bottom }]}>
               <View style={styles.modalBody}>{renderBillPanel()}</View>
               <Pressable
                 style={styles.modalClose}

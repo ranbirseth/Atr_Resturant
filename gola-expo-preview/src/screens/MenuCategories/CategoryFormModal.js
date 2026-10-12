@@ -1,13 +1,6 @@
 import React, { useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import FormModal from '../../components/FormModal';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import { validateCategoryForm } from '../../utils/menuUtils';
 
@@ -55,86 +48,57 @@ export default function CategoryFormModal({ category, saving, serverError, onClo
   }
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.title}>{category ? 'Edit Category' : 'Add Category'}</Text>
+    <FormModal
+      title={category ? 'Edit Category' : 'Add Category'}
+      maxWidth={520}
+      onRequestClose={onClose}
+      footer={
+        <>
+          <Pressable style={[styles.button, styles.cancel]} onPress={onClose} disabled={saving}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, styles.save, saving && styles.disabled]}
+            onPress={handleSave}
+            disabled={saving}>
+            <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save'}</Text>
+          </Pressable>
+        </>
+      }>
+      <Text style={styles.label}>Name</Text>
+      <TextInput
+        style={[styles.input, errors.name && styles.inputError]}
+        value={form.name}
+        onChangeText={(text) => setField('name', text)}
+        placeholder="e.g. Starters"
+        placeholderTextColor={COLORS.muted}
+      />
+      {errors.name ? <Text style={styles.fieldError}>{errors.name}</Text> : null}
 
-          <View style={styles.body}>
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              style={[styles.input, errors.name && styles.inputError]}
-              value={form.name}
-              onChangeText={(text) => setField('name', text)}
-              placeholder="e.g. Starters"
-              placeholderTextColor={COLORS.muted}
-            />
-            {errors.name ? <Text style={styles.fieldError}>{errors.name}</Text> : null}
-
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Visible to Customers</Text>
-              <Switch
-                value={form.customerVisible}
-                onValueChange={(value) => setField('customerVisible', value)}
-                trackColor={{ true: COLORS.revenue, false: COLORS.border }}
-              />
-            </View>
-
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Visible to Staff</Text>
-              <Switch
-                value={form.staffVisible}
-                onValueChange={(value) => setField('staffVisible', value)}
-                trackColor={{ true: COLORS.revenue, false: COLORS.border }}
-              />
-            </View>
-
-            {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
-          </View>
-
-          <View style={styles.footer}>
-            <Pressable style={[styles.button, styles.cancel]} onPress={onClose} disabled={saving}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.button, styles.save, saving && styles.disabled]}
-              onPress={handleSave}
-              disabled={saving}>
-              <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save'}</Text>
-            </Pressable>
-          </View>
-        </View>
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Visible to Customers</Text>
+        <Switch
+          value={form.customerVisible}
+          onValueChange={(value) => setField('customerVisible', value)}
+          trackColor={{ true: COLORS.revenue, false: COLORS.border }}
+        />
       </View>
-    </Modal>
+
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Visible to Staff</Text>
+        <Switch
+          value={form.staffVisible}
+          onValueChange={(value) => setField('staffVisible', value)}
+          trackColor={{ true: COLORS.revenue, false: COLORS.border }}
+        />
+      </View>
+
+      {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+    </FormModal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    padding: SPACING.lg,
-  },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    width: '100%',
-    maxWidth: 520,
-    alignSelf: 'center',
-    overflow: 'hidden',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.text,
-    padding: SPACING.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  body: {
-    padding: SPACING.lg,
-  },
   label: {
     fontSize: 13,
     fontWeight: '700',
@@ -179,13 +143,6 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     fontSize: 13,
     fontWeight: '600',
-  },
-  footer: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    padding: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
   },
   button: {
     flex: 1,

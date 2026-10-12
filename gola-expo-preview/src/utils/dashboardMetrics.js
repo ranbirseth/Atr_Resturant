@@ -182,6 +182,8 @@ function computeTodayStats(orders, now) {
 // Returns 24 buckets (one per IST hour, oldest first); only hours with orders
 // ever carry a non-zero value. Count includes every order placed in the hour;
 // revenue sums non-cancelled orders only (same definition as Total Revenue).
+// Rendering should narrow this to the hours that actually have orders via
+// `populatedTrendHours` so empty hours are never drawn.
 function buildTodayTrend(orders, now) {
   const today = filterOrdersForIstDay(orders, now);
   const dayKey = istDateKey(now);
@@ -216,6 +218,18 @@ function buildTodayTrend(orders, now) {
     }
   }
   return buckets;
+}
+
+// Narrow a trend built by `buildTodayTrend` (or any hourly list) to the hours
+// that actually contain at least one order (count > 0). Empty hours are dropped
+// so the chart never draws zero-height bars with confusing labels. The input
+// order is preserved (buildTodayTrend already returns hours oldest-first).
+// Non-array input yields [].
+function populatedTrendHours(trend) {
+  const list = Array.isArray(trend) ? trend : [];
+  return list.filter(function (hour) {
+    return toNumber(hour && hour.count) > 0;
+  });
 }
 
 function normalizeItemName(name) {
@@ -349,6 +363,7 @@ module.exports = {
   filterNonCancelledOrders: filterNonCancelledOrders,
   computeTodayStats: computeTodayStats,
   buildTodayTrend: buildTodayTrend,
+  populatedTrendHours: populatedTrendHours,
   computePopularItems: computePopularItems,
   computeTodayPopularItems: computeTodayPopularItems,
   hasLowRemainingStock: hasLowRemainingStock,

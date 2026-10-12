@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -11,6 +12,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import StateView from '../../components/menu/StateView';
 import ItemFormModal from './ItemFormModal';
@@ -20,6 +22,7 @@ import {
   formatPrice,
   formatPriceExact,
   getErrorMessage,
+  itemImageUrl,
 } from '../../utils/menuUtils';
 import { createItem, deleteItem, updateItem } from '../../api/menuService';
 
@@ -28,6 +31,30 @@ const VEG_OPTIONS = [
   { key: 'veg', label: 'Veg' },
   { key: 'nonveg', label: 'Non-Veg' },
 ];
+
+// Shows the configured item image, falling back to a neutral placeholder when
+// there is no usable URL or the remote image fails to load. Keyed by URL so a
+// failed load resets after the image is edited.
+function MenuCardImage({ url }) {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) {
+    return (
+      <View style={styles.imagePlaceholder}>
+        <Ionicons name="restaurant-outline" size={26} color={COLORS.muted} />
+        <Text style={styles.imagePlaceholderText}>No image</Text>
+      </View>
+    );
+  }
+  return (
+    <Image
+      source={{ uri: url }}
+      style={styles.image}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+      accessibilityLabel="Menu item image"
+    />
+  );
+}
 
 export default function MenuManagement({
   items,
@@ -129,6 +156,8 @@ export default function MenuManagement({
   function renderCard({ item }) {
     return (
       <View style={styles.card}>
+        <MenuCardImage key={item.image || 'no-image'} url={itemImageUrl(item)} />
+
         <View style={styles.cardHeader}>
           <Text style={styles.itemName} numberOfLines={2}>
             {item.name}
@@ -191,6 +220,7 @@ export default function MenuManagement({
         renderItem={renderCard}
         columnWrapperStyle={columns > 1 ? styles.columns : undefined}
         contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListHeaderComponent={
           <View>
@@ -337,6 +367,30 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     padding: SPACING.lg,
     marginBottom: SPACING.lg,
+  },
+  image: {
+    width: '100%',
+    height: 140,
+    borderRadius: RADIUS.sm,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.background,
+  },
+  imagePlaceholder: {
+    width: '100%',
+    height: 140,
+    borderRadius: RADIUS.sm,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+  },
+  imagePlaceholderText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.muted,
   },
   cardHeader: {
     flexDirection: 'row',

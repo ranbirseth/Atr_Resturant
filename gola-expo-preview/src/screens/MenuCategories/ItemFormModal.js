@@ -1,14 +1,6 @@
 import React, { useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import FormModal from '../../components/FormModal';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import { computeStaffPrice, formatPriceExact, validateItemForm } from '../../utils/menuUtils';
 
@@ -109,166 +101,136 @@ export default function ItemFormModal({ item, categories, saving, serverError, o
   const derivedStaffPrice = computeStaffPrice(form.price);
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.title}>{item ? 'Edit Menu Item' : 'Add Menu Item'}</Text>
+    <FormModal
+      title={item ? 'Edit Menu Item' : 'Add Menu Item'}
+      maxWidth={720}
+      onRequestClose={onClose}
+      footer={
+        <>
+          <Pressable style={[styles.button, styles.cancel]} onPress={onClose} disabled={saving}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, styles.save, saving && styles.disabled]}
+            onPress={handleSave}
+            disabled={saving}>
+            <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save'}</Text>
+          </Pressable>
+        </>
+      }>
+      <Field
+        label="Name"
+        value={form.name}
+        onChangeText={(text) => setField('name', text)}
+        error={errors.name}
+        placeholder="e.g. Butter Chicken"
+      />
 
-          <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
-            <Field
-              label="Name"
-              value={form.name}
-              onChangeText={(text) => setField('name', text)}
-              error={errors.name}
-              placeholder="e.g. Butter Chicken"
-            />
+      <Text style={styles.label}>Category</Text>
+      <View style={styles.chips}>
+        {categoryOptions.length === 0 ? (
+          <Text style={styles.hint}>No categories yet — create one first.</Text>
+        ) : (
+          categoryOptions.map(function (category) {
+            const active = form.category === category.name;
+            return (
+              <Pressable
+                key={category._id || category.name}
+                onPress={() => setField('category', category.name)}
+                style={[styles.chip, active && styles.chipActive]}>
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                  {category.name}
+                </Text>
+              </Pressable>
+            );
+          })
+        )}
+      </View>
+      {errors.category ? <Text style={styles.fieldError}>{errors.category}</Text> : null}
 
-            <Text style={styles.label}>Category</Text>
-            <View style={styles.chips}>
-              {categoryOptions.length === 0 ? (
-                <Text style={styles.hint}>No categories yet — create one first.</Text>
-              ) : (
-                categoryOptions.map(function (category) {
-                  const active = form.category === category.name;
-                  return (
-                    <Pressable
-                      key={category._id || category.name}
-                      onPress={() => setField('category', category.name)}
-                      style={[styles.chip, active && styles.chipActive]}>
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                        {category.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })
-              )}
-            </View>
-            {errors.category ? <Text style={styles.fieldError}>{errors.category}</Text> : null}
-
-            <View style={styles.row}>
-              <View style={styles.rowItem}>
-                <Field
-                  label="Customer Price (₹)"
-                  value={form.price}
-                  onChangeText={(text) => setField('price', text)}
-                  error={errors.price}
-                  keyboardType="numeric"
-                  placeholder="0"
-                />
-              </View>
-              <View style={styles.rowItem}>
-                <Text style={styles.label}>Staff Price (auto)</Text>
-                <View style={[styles.input, styles.readOnly]}>
-                  <Text style={styles.readOnlyText}>{formatPriceExact(derivedStaffPrice)}</Text>
-                </View>
-                <Text style={styles.hint}>60% of customer price, rounded to 2 decimals</Text>
-              </View>
-            </View>
-
-            <View style={styles.row}>
-              <View style={styles.rowItem}>
-                <Field
-                  label="Prep Time (min)"
-                  value={form.estimatedPreparationTime}
-                  onChangeText={(text) => setField('estimatedPreparationTime', text)}
-                  error={errors.estimatedPreparationTime}
-                  keyboardType="numeric"
-                  placeholder="e.g. 15"
-                />
-              </View>
-            </View>
-
-            <Field
-              label="Description"
-              value={form.description}
-              onChangeText={(text) => setField('description', text)}
-              placeholder="Short description"
-              multiline
-            />
-
-            <Field
-              label="Image URL"
-              value={form.image}
-              onChangeText={(text) => setField('image', text)}
-              placeholder="https://…"
-              autoCapitalize="none"
-              keyboardType="url"
-            />
-
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Vegetarian</Text>
-              <Switch
-                value={form.isVeg}
-                onValueChange={(value) => setField('isVeg', value)}
-                trackColor={{ true: COLORS.revenue, false: COLORS.border }}
-              />
-            </View>
-
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Available for Customers</Text>
-              <Switch
-                value={form.available}
-                onValueChange={(value) => setField('available', value)}
-                trackColor={{ true: COLORS.revenue, false: COLORS.border }}
-              />
-            </View>
-
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Available for Staff</Text>
-              <Switch
-                value={form.availableForStaff}
-                onValueChange={(value) => setField('availableForStaff', value)}
-                trackColor={{ true: COLORS.revenue, false: COLORS.border }}
-              />
-            </View>
-
-            {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
-          </ScrollView>
-
-          <View style={styles.footer}>
-            <Pressable style={[styles.button, styles.cancel]} onPress={onClose} disabled={saving}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.button, styles.save, saving && styles.disabled]}
-              onPress={handleSave}
-              disabled={saving}>
-              <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save'}</Text>
-            </Pressable>
+      <View style={styles.row}>
+        <View style={styles.rowItem}>
+          <Field
+            label="Customer Price (₹)"
+            value={form.price}
+            onChangeText={(text) => setField('price', text)}
+            error={errors.price}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+        </View>
+        <View style={styles.rowItem}>
+          <Text style={styles.label}>Staff Price (auto)</Text>
+          <View style={[styles.input, styles.readOnly]}>
+            <Text style={styles.readOnlyText}>{formatPriceExact(derivedStaffPrice)}</Text>
           </View>
+          <Text style={styles.hint}>60% of customer price, rounded to 2 decimals</Text>
         </View>
       </View>
-    </Modal>
+
+      <View style={styles.row}>
+        <View style={styles.rowItem}>
+          <Field
+            label="Prep Time (min)"
+            value={form.estimatedPreparationTime}
+            onChangeText={(text) => setField('estimatedPreparationTime', text)}
+            error={errors.estimatedPreparationTime}
+            keyboardType="numeric"
+            placeholder="e.g. 15"
+          />
+        </View>
+      </View>
+
+      <Field
+        label="Description"
+        value={form.description}
+        onChangeText={(text) => setField('description', text)}
+        placeholder="Short description"
+        multiline
+      />
+
+      <Field
+        label="Image URL"
+        value={form.image}
+        onChangeText={(text) => setField('image', text)}
+        placeholder="https://…"
+        autoCapitalize="none"
+        keyboardType="url"
+      />
+
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Vegetarian</Text>
+        <Switch
+          value={form.isVeg}
+          onValueChange={(value) => setField('isVeg', value)}
+          trackColor={{ true: COLORS.revenue, false: COLORS.border }}
+        />
+      </View>
+
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Available for Customers</Text>
+        <Switch
+          value={form.available}
+          onValueChange={(value) => setField('available', value)}
+          trackColor={{ true: COLORS.revenue, false: COLORS.border }}
+        />
+      </View>
+
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Available for Staff</Text>
+        <Switch
+          value={form.availableForStaff}
+          onValueChange={(value) => setField('availableForStaff', value)}
+          trackColor={{ true: COLORS.revenue, false: COLORS.border }}
+        />
+      </View>
+
+      {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+    </FormModal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    padding: SPACING.lg,
-  },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    maxHeight: '92%',
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-    overflow: 'hidden',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.text,
-    padding: SPACING.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  body: {
-    padding: SPACING.lg,
-  },
   field: {
     marginBottom: SPACING.md,
   },
@@ -362,13 +324,6 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     fontSize: 13,
     fontWeight: '600',
-  },
-  footer: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    padding: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
   },
   button: {
     flex: 1,

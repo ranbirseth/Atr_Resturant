@@ -87,7 +87,7 @@ export default function InventoryScreen() {
   function confirmDelete(item) {
     Alert.alert(
       'Delete inventory item',
-      `Delete "${item.name}"? Items that already have stock history are archived (kept for records) instead of removed.`,
+      `Permanently delete "${item.name}"? This also deletes the item's stock history (movements and cycles). This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => runDelete(item) },
@@ -103,9 +103,8 @@ export default function InventoryScreen() {
     try {
       const result = await deleteIngredient(item._id);
       load(true);
-      const title = result && result.archived ? 'Item archived' : 'Item deleted';
-      const message = (result && result.message) || (result && result.archived ? 'Kept to preserve stock history.' : 'Removed.');
-      Alert.alert(title, message);
+      const message = (result && result.message) || 'Removed.';
+      Alert.alert('Item deleted', message);
     } catch (deleteError) {
       Alert.alert('Delete failed', getErrorMessage(deleteError, 'Failed to delete item'));
     } finally {

@@ -447,31 +447,137 @@ test('alerts endpoint lists items with usage/low/out/need-to-buy flags', async (
     assert.equal(row.usageAlert, true);
 });
 
-test('DELETE archives items with history instead of hard-deleting', async () => {
+test('DELETE permanently removes an item with movements and their stock records', async () => {
     const item = await createItem({
-        name: `ArchiveDelete ${Date.now()}`,
+        name: `DeleteWithHistory ${Date.now()}`,
         unit: 'kg',
         minimumStockLevel: 0,
         openingQty: 10,
     });
     await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 2 });
 
+    // Sanity: the item genuinely has ledger history.
+    const before = await api('GET', `/stock/movements?ingredientId=${item._id}`);
+    assert.equal(before.data.length, 2);
+
     const res = await api('DELETE', `/ingredients/${item._id}`);
     assert.equal(res.status, 200, JSON.stringify(res.data));
-    assert.equal(res.data.archived, true);
-    assert.equal(res.data.ingredient.isActive, false);
-    assert.ok(res.data.message.includes('archived'), 'message explains the archive');
+    assert.equal(res.data.deleted, true);
+    assert.equal(res.data.archived, undefined, 'never silently archived');
+    assert.equal(res.data.removedMovements, 2);
+    assert.equal(res.data.removedCycles, 1);
+    assert.ok(res.data.message.includes('permanently deleted'), 'message reports permanent deletion');
 
-    const stillThere = await api('GET', `/ingredients/${item._id}`);
-    assert.equal(stillThere.status, 200);
-    assert.equal(stillThere.data.isActive, false);
-    assert.equal(stillThere.data.currentQty, 8, 'balance untouched by archive');
+    const gone = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(gone.status, 404);
 
     const movements = await api('GET', `/stock/movements?ingredientId=${item._id}`);
-    assert.equal(movements.data.length, 2, 'history preserved');
+    assert.equal(movements.data.length, 0, 'movement history deleted with the item');
+
+    const cycles = await api('GET', `/stock/cycles?ingredientId=${item._id}`);
+    assert.equal(cycles.data.length, 0, 'cycles deleted with the item');
 });
 
-test('DELETE hard-deletes only items with no movements or cycles', async () => {
+test('DELETE with cycles but no movements also cascades cleanly', async () => {
+    const item = await createItem({
+        name: `DeleteCycleOnly ${Date.now()}`,
+        unit: 'litre',
+        minimumStockLevel: 0,
+        openingQty: 5,
+    });
+    // Opening quantity seeds a cycle but we remove its movement so only the
+    // cycle remains, exercising the cycle-only branch.
+    await StockMovement.deleteMany({ ingredientId: item._id });
+
+    const res = await api('DELETE', `/ingredients/${item._id}`);
+    assert.equal(res.status, 200, JSON.stringify(res.data));
+    assert.equal(res.data.deleted, true);
+    assert.equal(res.data.removedCycles, 1);
+    assert.equal(res.data.removedMovements, 0);
+
+    assert.equal((await api('GET', `/ingredients/${item._id}`)).status, 404);
+    assert.equal((await api('GET', `/stock/cycles?ingredientId=${item._id}`)).data.length, 0);
+});
+
+test('DELETE is idempotent: a repeated request returns 404 and deletes nothing', async () => {
+    const item = await createItem({
+        name: `DeleteTwice ${Date.now()}`,
+        unit: 'kg',
+        minimumStockLevel: 0,
+        openingQty: 3,
+    });
+    await api('POST', '/stock/movements', { ingredientId: item._id, type: 'CONSUMPTION', quantity: 1 });
+
+    const first = await api('DELETE', `/ingredients/${item._id}`);
+    assert.equal(first.status, 200);
+
+    const second = await api('DELETE', `/ingredients/${item._id}`);
+    assert.equal(second.status, 404);
+});
+
+test('DELETE removes only the target item and preserves unrelated items', async () => {
+    const victim = await createItem({
+        name: `DeleteVictim ${Date.now()}`,
+        unit: 'kg',
+        minimumStockLevel: 0,
+        openingQty: 10,
+    });
+    const bystander = await createItem({
+        name: `DeleteBystander ${Date.now()}`,
+        unit: 'kg',
+        minimumStockLevel: 0,
+        openingQty: 6,
+    });
+    await api('POST', '/stock/movements', { ingredientId: victim._id, type: 'CONSUMPTION', quantity: 2 });
+    await api('POST', '/stock/movements', { ingredientId: bystander._id, type: 'CONSUMPTION', quantity: 1 });
+
+    const res = await api('DELETE', `/ingredients/${victim._id}`);
+    assert.equal(res.status, 200);
+
+    assert.equal((await api('GET', `/ingredients/${victim._id}`)).status, 404);
+    const survivor = await api('GET', `/ingredients/${bystander._id}`);
+    assert.equal(survivor.status, 200);
+    assert.equal(survivor.data.currentQty, 5, 'bystander balance untouched');
+    assert.equal(
+        (await api('GET', `/stock/movements?ingredientId=${bystander._id}`)).data.length,
+        2,
+        'bystander history preserved',
+    );
+});
+
+test('DELETE keeps analytics consistent (deleted item leaves no orphan totals)', async () => {
+    const victim = await createItem({
+        name: `DeleteAnalytics ${Date.now()}`,
+        unit: 'kg',
+        minimumStockLevel: 0,
+        openingQty: 20,
+    });
+    await api('POST', '/stock/movements', { ingredientId: victim._id, type: 'CONSUMPTION', quantity: 5 });
+
+    const beforeAnalytics = await api('GET', '/analytics');
+    const beforeTotal = beforeAnalytics.data.totals.consumption;
+
+    const res = await api('DELETE', `/ingredients/${victim._id}`);
+    assert.equal(res.status, 200);
+
+    const afterAnalytics = await api('GET', '/analytics');
+    assert.equal(
+        afterAnalytics.data.items.some((i) => String(i.ingredientId) === String(victim._id)),
+        false,
+        'deleted item no longer appears in analytics items',
+    );
+    assert.equal(
+        afterAnalytics.data.totals.consumption,
+        beforeTotal - 5,
+        'consumption totals drop by exactly the deleted history',
+    );
+
+    const recon = await api('POST', '/stock/reconcile', {});
+    const mine = recon.data.mismatches.filter((m) => String(m.ingredientId) === String(victim._id));
+    assert.equal(mine.length, 0, 'no dangling mismatch for the deleted item');
+});
+
+test('DELETE hard-deletes items with no movements or cycles', async () => {
     const item = await createItem({
         name: `HardDelete ${Date.now()}`,
         unit: 'litre',

@@ -14,6 +14,7 @@ const {
   categoryKey,
   formatPrice,
   formatPriceExact,
+  itemImageUrl,
   audiencePrice,
   filterItems,
   itemCountForCategory,
@@ -81,6 +82,26 @@ test('formatPriceExact keeps two decimals for the derived staff price', () => {
   assert.equal(formatPriceExact(59.99), '\u20B959.99');
   assert.equal(formatPriceExact(120), '\u20B9120.00');
   assert.equal(formatPriceExact(undefined), '\u2014');
+});
+
+test('itemImageUrl accepts http(s)/data image URLs and trims them', () => {
+  assert.equal(itemImageUrl({ image: 'https://cdn.example.com/a.jpg' }), 'https://cdn.example.com/a.jpg');
+  assert.equal(itemImageUrl({ image: '  http://x/y.png  ' }), 'http://x/y.png');
+  assert.equal(itemImageUrl({ image: 'https://EXAMPLE.com/A.JPG' }), 'https://EXAMPLE.com/A.JPG');
+  assert.equal(itemImageUrl({ image: 'data:image/png;base64,AAAA' }), 'data:image/png;base64,AAAA');
+});
+
+test('itemImageUrl rejects missing/blank/invalid image values', () => {
+  assert.equal(itemImageUrl(null), null);
+  assert.equal(itemImageUrl(undefined), null);
+  assert.equal(itemImageUrl({}), null);
+  assert.equal(itemImageUrl({ image: null }), null);
+  assert.equal(itemImageUrl({ image: 42 }), null);
+  assert.equal(itemImageUrl({ image: '' }), null);
+  assert.equal(itemImageUrl({ image: '   ' }), null);
+  assert.equal(itemImageUrl({ image: 'a.jpg' }), null);
+  assert.equal(itemImageUrl({ image: 'ftp://host/a.jpg' }), null);
+  assert.equal(itemImageUrl({ image: 'javascript:alert(1)' }), null);
 });
 
 test('audiencePrice: CUSTOMER unchanged, STAFF derived from price (legacy value ignored)', () => {

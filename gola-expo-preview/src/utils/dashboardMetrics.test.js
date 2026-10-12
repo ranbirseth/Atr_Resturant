@@ -15,6 +15,7 @@ const {
   filterOrdersForIstDay,
   computeTodayStats,
   buildTodayTrend,
+  populatedTrendHours,
   computePopularItems,
   computeTodayPopularItems,
   hasLowRemainingStock,
@@ -205,6 +206,75 @@ test('buildTodayTrend handles empty orders and bad dates', () => {
     return sum + b.count;
   }, 0);
   assert.equal(total, 0);
+});
+
+test('populatedTrendHours keeps only hours with orders, oldest-first', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z'); // 09:00 IST on 2026-10-11
+  const orders = [
+    { createdAt: '2026-10-10T18:40:00.000Z', status: 'PLACED', totalAmount: 100 }, // 00:10 IST -> hour 0
+    { createdAt: '2026-10-11T17:00:00.000Z', status: 'CANCELLED', totalAmount: 500 }, // 22:30 IST -> hour 22
+    { createdAt: '2026-10-11T03:00:00.000Z', status: 'COMPLETED', totalAmount: 80 }, // 08:30 IST -> hour 8
+  ];
+  const populated = populatedTrendHours(buildTodayTrend(orders, now));
+  // Exactly three hours had orders; the other 21 are dropped.
+  assert.equal(populated.length, 3);
+  assert.deepEqual(
+    populated.map(function (hour) {
+      return hour.hour;
+    }),
+    [0, 8, 22],
+  );
+  assert.equal(populated[0].label, '00:00');
+  assert.equal(populated[0].count, 1);
+  assert.equal(populated[0].revenue, 100);
+  assert.equal(populated[2].count, 1);
+  assert.equal(populated[2].revenue, 0); // cancelled order: counts, no revenue
+});
+
+test('populatedTrendHours returns [] when there are no orders today', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const orders = [
+    { createdAt: '2026-10-10T18:29:00.000Z', status: 'COMPLETED', totalAmount: 999 }, // yesterday
+  ];
+  assert.deepEqual(populatedTrendHours(buildTodayTrend(orders, now)), []);
+  assert.deepEqual(populatedTrendHours(buildTodayTrend([], now)), []);
+});
+
+test('populatedTrendHours tolerates non-array input and malformed buckets', () => {
+  assert.deepEqual(populatedTrendHours(null), []);
+  assert.deepEqual(populatedTrendHours(undefined), []);
+  assert.deepEqual(populatedTrendHours('nope'), []);
+  const mixed = [
+    { key: 'a', label: '00:00', count: '2', revenue: 10 }, // numeric string counts as populated
+    { key: 'b', label: '01:00', count: 0, revenue: 0 },
+    { key: 'c', label: '02:00', count: 'bad', revenue: 5 },
+    null,
+  ];
+  const populated = populatedTrendHours(mixed);
+  assert.equal(populated.length, 1);
+  assert.equal(populated[0].key, 'a');
+});
+
+test('buildTodayTrend only counts the current IST day around the boundary', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z'); // IST today = 2026-10-11
+  const orders = [
+    { createdAt: '2026-10-10T18:30:00.000Z', status: 'PLACED', totalAmount: 1 }, // start boundary -> today, hour 0
+    { createdAt: '2026-10-11T18:29:59.999Z', status: 'PLACED', totalAmount: 1 }, // end-1ms -> today, hour 23
+    { createdAt: '2026-10-11T18:30:00.000Z', status: 'PLACED', totalAmount: 1 }, // next IST day -> excluded
+  ];
+  const populated = populatedTrendHours(buildTodayTrend(orders, now));
+  assert.deepEqual(
+    populated.map(function (hour) {
+      return hour.hour;
+    }),
+    [0, 23],
+  );
+  assert.equal(
+    populated.reduce(function (sum, hour) {
+      return sum + hour.count;
+    }, 0),
+    2,
+  );
 });
 
 test('popular items aggregates by normalized name, sorted by quantity', () => {

@@ -1,13 +1,6 @@
 import React, { useRef, useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import FormModal from '../../components/FormModal';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import {
   computeUnitCost,
@@ -85,94 +78,69 @@ export default function MovementModal({ item, mode, saving, serverError, onClose
   }
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.title}>{TITLES[mode] || 'Stock'}</Text>
-          <Text style={styles.subtitle}>
-            {item.name} · available {formatQty(item.currentQty, item.unit)}
-          </Text>
+    <FormModal
+      title={TITLES[mode] || 'Stock'}
+      subtitle={item.name + ' · available ' + formatQty(item.currentQty, item.unit)}
+      onRequestClose={onClose}
+      footer={
+        <>
+          <Pressable style={[styles.button, styles.cancel]} onPress={onClose} disabled={saving}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, styles.save, saving && styles.disabled]}
+            onPress={handleSave}
+            disabled={saving}>
+            <Text style={styles.saveText}>
+              {saving ? 'Saving…' : mode === 'RESTOCK' ? 'Confirm Restock' : 'Confirm Consume'}
+            </Text>
+          </Pressable>
+        </>
+      }>
+      <Field
+        label={mode === 'RESTOCK' ? `Quantity Purchased (${item.unit})` : `Quantity to Consume (${item.unit})`}
+        value={quantity}
+        onChangeText={setQuantity}
+        error={errors.quantity}
+        keyboardType="decimal-pad"
+        placeholder="0"
+      />
 
-          <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
-            <Field
-              label={mode === 'RESTOCK' ? `Quantity Purchased (${item.unit})` : `Quantity to Consume (${item.unit})`}
-              value={quantity}
-              onChangeText={setQuantity}
-              error={errors.quantity}
-              keyboardType="decimal-pad"
-              placeholder="0"
-            />
+      {mode === 'RESTOCK' ? (
+        <Field
+          label="Total Purchase Price"
+          value={totalPrice}
+          onChangeText={setTotalPrice}
+          error={errors.unitCost}
+          keyboardType="decimal-pad"
+          placeholder="e.g. 600"
+        />
+      ) : (
+        <Field
+          label="Note (optional)"
+          value={note}
+          onChangeText={setNote}
+          placeholder="Reason, e.g. lunch service"
+          multiline
+        />
+      )}
 
-            {mode === 'RESTOCK' ? (
-              <Field
-                label="Total Purchase Price"
-                value={totalPrice}
-                onChangeText={setTotalPrice}
-                error={errors.unitCost}
-                keyboardType="decimal-pad"
-                placeholder="e.g. 600"
-              />
-            ) : (
-              <Field
-                label="Note (optional)"
-                value={note}
-                onChangeText={setNote}
-                placeholder="Reason, e.g. lunch service"
-                multiline
-              />
-            )}
+      {mode === 'RESTOCK' && computeUnitCost(totalPrice, quantity) !== null ? (
+        <Text style={styles.preview}>
+          Per-unit cost: {formatQty(computeUnitCost(totalPrice, quantity), '')} / {item.unit}
+        </Text>
+      ) : null}
 
-            {mode === 'RESTOCK' && computeUnitCost(totalPrice, quantity) !== null ? (
-              <Text style={styles.preview}>
-                Per-unit cost: {formatQty(computeUnitCost(totalPrice, quantity), '')} / {item.unit}
-              </Text>
-            ) : null}
+      {mode === 'CONSUMPTION' ? (
+        <Text style={styles.hint}>Cannot exceed the available quantity.</Text>
+      ) : null}
 
-            {mode === 'CONSUMPTION' ? (
-              <Text style={styles.hint}>Cannot exceed the available quantity.</Text>
-            ) : null}
-
-            {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
-          </ScrollView>
-
-          <View style={styles.footer}>
-            <Pressable style={[styles.button, styles.cancel]} onPress={onClose} disabled={saving}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.button, styles.save, saving && styles.disabled]}
-              onPress={handleSave}
-              disabled={saving}>
-              <Text style={styles.saveText}>
-                {saving ? 'Saving…' : mode === 'RESTOCK' ? 'Confirm Restock' : 'Confirm Consume'}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
+      {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+    </FormModal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    padding: SPACING.lg,
-  },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    maxHeight: '92%',
-    width: '100%',
-    maxWidth: 560,
-    alignSelf: 'center',
-    overflow: 'hidden',
-  },
-  title: { fontSize: 18, fontWeight: '800', color: COLORS.text, paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg },
-  subtitle: { fontSize: 13, color: COLORS.muted, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  body: { padding: SPACING.lg },
   field: { marginBottom: SPACING.md },
   label: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.xs },
   input: {
@@ -190,13 +158,6 @@ const styles = StyleSheet.create({
   preview: { fontSize: 13, fontWeight: '700', color: COLORS.revenue },
   hint: { fontSize: 12, color: COLORS.muted },
   serverError: { marginTop: SPACING.md, color: COLORS.danger, fontSize: 13, fontWeight: '600' },
-  footer: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    padding: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
   button: { flex: 1, paddingVertical: SPACING.md, borderRadius: RADIUS.md, alignItems: 'center' },
   cancel: { backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border },
   cancelText: { color: COLORS.text, fontWeight: '700' },

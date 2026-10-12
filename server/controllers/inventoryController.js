@@ -210,14 +210,18 @@ const setIngredientActive = async (req, res) => {
     }
 };
 
-// @desc    Delete an inventory item safely
+// @desc    Permanently delete an inventory item and its stock history
 // @route   DELETE /api/inventory/ingredients/:id
-// SAFETY: items with any ledger history are NEVER hard-deleted (that would
-// orphan the append-only StockMovement ledger and the StockCycle records).
-// They are archived instead (isActive=false, the same soft mechanism the
-// activate/deactivate routes use) so balances and movement history remain
-// intact, and a clear result tells the UI why. Only items with NO movements
-// and NO cycles are actually removed from the database.
+// POLICY (owner-approved): deleting an item removes it from the system for
+// good, even when it has ledger history — it is never silently archived. The
+// append-only StockMovement records and StockCycle records reference the item
+// by ingredientId and belong to it alone, so they are deleted with it rather
+// than left orphaned (orphans would still feed analytics/reconcile totals while
+// mapping to no item). Dependents are removed first and the item document last,
+// so a mid-operation failure leaves the item visible for a safe retry.
+// NOTE: the deployment is standalone MongoDB, so this multi-collection cascade
+// is not wrapped in a transaction. Each step is idempotent, so a retry after a
+// partial failure completes the deletion without duplicating effects.
 const deleteIngredient = async (req, res) => {
     try {
         const ingredient = await Ingredient.findById(req.params.id);
@@ -230,25 +234,18 @@ const deleteIngredient = async (req, res) => {
             StockCycle.countDocuments({ ingredientId: ingredient._id }),
         ]);
 
-        if (movementCount > 0 || cycleCount > 0) {
-            const archived = await Ingredient.findByIdAndUpdate(
-                ingredient._id,
-                { $set: { isActive: false } },
-                { new: true },
-            );
-            const openCycle = await StockCycle.findOne({ ingredientId: ingredient._id, status: 'OPEN' });
-            return res.json({
-                archived: true,
-                message: `"${ingredient.name}" has stock history (${movementCount} movement(s), ${cycleCount} cycle(s)), so it was archived instead of deleted to preserve those records.`,
-                ingredient: stockRow(archived, openCycle),
-            });
-        }
-
+        await StockMovement.deleteMany({ ingredientId: ingredient._id });
         await StockCycle.deleteMany({ ingredientId: ingredient._id });
         await Ingredient.findByIdAndDelete(ingredient._id);
+
+        const historyNote = movementCount || cycleCount
+            ? `along with ${movementCount} stock movement(s) and ${cycleCount} cycle(s)`
+            : 'with no stock history';
         res.json({
             deleted: true,
-            message: `"${ingredient.name}" deleted.`,
+            removedMovements: movementCount,
+            removedCycles: cycleCount,
+            message: `"${ingredient.name}" was permanently deleted ${historyNote}.`,
         });
     } catch (error) {
         res.status(500).json({ message: error.message });

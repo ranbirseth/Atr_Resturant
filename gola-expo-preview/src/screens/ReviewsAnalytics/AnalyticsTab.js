@@ -382,63 +382,48 @@ export default function AnalyticsTab() {
               </Text>
             ) : (
               <View>
-                <View style={styles.breakdownRow}>
-                  <View style={styles.breakdownLeft}>
-                    <Text style={styles.breakdownLabel}>Restocks</Text>
-                    <Text style={styles.breakdownSub}>
-                      {formatNumber(inventory.summary.restockEvents)} event
-                      {inventory.summary.restockEvents === 1 ? '' : 's'}
-                    </Text>
-                  </View>
-                  <Text style={styles.breakdownValue}>
-                    {quantityText(inventory.summary.restockedQty)}
-                  </Text>
-                </View>
-                <View style={styles.breakdownRow}>
-                  <View style={styles.breakdownLeft}>
-                    <Text style={styles.breakdownLabel}>Consumption</Text>
-                    <Text style={styles.breakdownSub}>
-                      {formatNumber(inventory.summary.consumptionEvents)} movement
-                      {inventory.summary.consumptionEvents === 1 ? '' : 's'}
-                    </Text>
-                  </View>
-                  <Text style={styles.breakdownValue}>
-                    {quantityText(inventory.summary.consumedQty)}
-                  </Text>
-                </View>
-                <View style={styles.breakdownRow}>
-                  <View style={styles.breakdownLeft}>
-                    <Text style={styles.breakdownLabel}>Opening</Text>
-                    <Text style={styles.breakdownSub}>
-                      {formatNumber(inventory.summary.openingEvents)} event
-                      {inventory.summary.openingEvents === 1 ? '' : 's'}
-                    </Text>
-                  </View>
-                  <Text style={styles.breakdownValue}>
-                    {quantityText(inventory.summary.openingQty)}
-                  </Text>
-                </View>
-                <View style={styles.breakdownRow}>
-                  <View style={styles.breakdownLeft}>
-                    <Text style={styles.breakdownLabel}>Adjustments</Text>
-                    <Text style={styles.breakdownSub}>
-                      {formatNumber(inventory.summary.adjustmentEvents)} event
-                      {inventory.summary.adjustmentEvents === 1 ? '' : 's'}
-                    </Text>
-                  </View>
-                  <Text style={styles.breakdownValue}>
-                    {quantityText(inventory.summary.adjustmentQty)}
-                  </Text>
-                </View>
-                <View style={styles.breakdownRow}>
-                  <View style={styles.breakdownLeft}>
-                    <Text style={styles.breakdownLabel}>Total movements</Text>
-                    <Text style={styles.breakdownSub}>COMMITTED movements in range</Text>
-                  </View>
-                  <Text style={styles.breakdownValue}>
-                    {formatNumber(inventory.summary.movementCount)}
-                  </Text>
-                </View>
+                {inventory.summary.movementCount === 0 ? (
+                  <Text style={styles.empty}>No stock activity in this range.</Text>
+                ) : (
+                  <>
+                    <View style={styles.breakdownRow}>
+                      <View style={styles.breakdownLeft}>
+                        <Text style={styles.breakdownLabel}>Stock Added</Text>
+                        <Text style={styles.breakdownSub}>
+                          {formatNumber(inventory.summary.openingEvents)} event
+                          {inventory.summary.openingEvents === 1 ? '' : 's'}
+                        </Text>
+                      </View>
+                      <Text style={styles.breakdownValue}>
+                        {quantityText(inventory.summary.openingQty)}
+                      </Text>
+                    </View>
+                    <View style={styles.breakdownRow}>
+                      <View style={styles.breakdownLeft}>
+                        <Text style={styles.breakdownLabel}>Restock Events</Text>
+                        <Text style={styles.breakdownSub}>
+                          {formatNumber(inventory.summary.restockEvents)} event
+                          {inventory.summary.restockEvents === 1 ? '' : 's'}
+                        </Text>
+                      </View>
+                      <Text style={styles.breakdownValue}>
+                        {quantityText(inventory.summary.restockedQty)}
+                      </Text>
+                    </View>
+                    <View style={styles.breakdownRow}>
+                      <View style={styles.breakdownLeft}>
+                        <Text style={styles.breakdownLabel}>Consumption Events</Text>
+                        <Text style={styles.breakdownSub}>
+                          {formatNumber(inventory.summary.consumptionEvents)} event
+                          {inventory.summary.consumptionEvents === 1 ? '' : 's'}
+                        </Text>
+                      </View>
+                      <Text style={styles.breakdownValue}>
+                        {quantityText(inventory.summary.consumedQty)}
+                      </Text>
+                    </View>
+                  </>
+                )}
 
                 <Text style={styles.groupTitle}>Restocked &amp; consumed by item (period)</Text>
                 {inventory.itemActivity.length === 0 ? (
@@ -456,7 +441,6 @@ export default function AnalyticsTab() {
                         <View style={styles.suggestFlow}>
                           <Text style={styles.suggestAmount}>R {quantityText(row.restockedQty)}</Text>
                           <Text style={styles.suggestAmount}>C {quantityText(row.consumedQty)}</Text>
-                          <Text style={styles.suggestAmount}>A {quantityText(row.adjustmentQty)}</Text>
                         </View>
                       </View>
                     );

@@ -1,19 +1,22 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import {COLORS, RADIUS, SPACING} from '../../theme';
-import {formatCurrency, toNumber} from '../../utils/dashboardMetrics';
+import {formatCurrency, populatedTrendHours, toNumber} from '../../utils/dashboardMetrics';
 
 const MAX_BAR_HEIGHT = 120;
+// Fixed column width keeps hour labels legible on a narrow phone while the
+// horizontal scroll handles a busy day; flexGrow spreads a few columns out.
+const COLUMN_WIDTH = 42;
 
 export default function OrdersTrend({data}) {
-  const safe = Array.isArray(data) ? data : [];
-  const maxCount = safe.reduce(function (max, hour) {
+  const hours = populatedTrendHours(data);
+  const maxCount = hours.reduce(function (max, hour) {
     return Math.max(max, toNumber(hour && hour.count));
   }, 0);
-  const totalOrders = safe.reduce(function (sum, hour) {
+  const totalOrders = hours.reduce(function (sum, hour) {
     return sum + toNumber(hour && hour.count);
   }, 0);
-  const totalRevenue = safe.reduce(function (sum, hour) {
+  const totalRevenue = hours.reduce(function (sum, hour) {
     return sum + toNumber(hour && hour.revenue);
   }, 0);
 
@@ -22,8 +25,8 @@ export default function OrdersTrend({data}) {
       <Text style={styles.title}>Today&apos;s Trend</Text>
       <Text style={styles.subtitle}>Orders &amp; revenue by hour (IST)</Text>
 
-      {safe.length === 0 ? (
-        <Text style={styles.empty}>No trend data available.</Text>
+      {hours.length === 0 ? (
+        <Text style={styles.empty}>No orders today yet.</Text>
       ) : (
         <>
           <View style={styles.summaryRow}>
@@ -32,11 +35,11 @@ export default function OrdersTrend({data}) {
             </Text>
             <Text style={styles.summaryText}>{totalOrders} orders</Text>
           </View>
-          {totalOrders === 0 ? (
-            <Text style={styles.empty}>No orders today yet.</Text>
-          ) : null}
-          <View style={styles.chart}>
-            {safe.map(function (hour) {
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chart}>
+            {hours.map(function (hour) {
               const count = toNumber(hour && hour.count);
               const ratio = maxCount > 0 ? count / maxCount : 0;
               const height = Math.max(0, ratio * MAX_BAR_HEIGHT);
@@ -50,7 +53,7 @@ export default function OrdersTrend({data}) {
                 </View>
               );
             })}
-          </View>
+          </ScrollView>
         </>
       )}
     </View>
@@ -100,10 +103,13 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'space-between',
+    flexGrow: 1,
+    justifyContent: 'space-around',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.xs,
   },
   column: {
-    flex: 1,
+    width: COLUMN_WIDTH,
     alignItems: 'center',
   },
   count: {

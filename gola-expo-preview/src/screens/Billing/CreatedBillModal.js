@@ -1,10 +1,13 @@
-import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import thermalPrinterService from '../../services/thermalPrinterService';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import { formatCurrency } from '../../utils/billingUtils';
 import { audienceLabel } from '../../utils/audienceBilling';
+
+const paymentQr = require('../../../assets/payment-qr.png');
 
 function stamp(value) {
   const date = value ? new Date(value) : new Date();
@@ -24,11 +27,36 @@ function stamp(value) {
 // amounts come from the server DTO, not from the tablet's preview.
 export default function CreatedBillModal({ bill, onClose }) {
   const insets = useSafeAreaInsets();
+  const [printing, setPrinting] = useState(false);
   if (!bill) {
     return null;
   }
   const lines = Array.isArray(bill.lines) ? bill.lines : [];
   const label = audienceLabel(bill.audience) || 'Customer';
+
+  async function handlePrint() {
+    if (printing) {
+      return;
+    }
+    setPrinting(true);
+    try {
+      const printed = await thermalPrinterService.printReceipt(bill);
+      if (!printed) {
+        Alert.alert('Print failed, retry?', 'Check that the printer is on and connected.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: handlePrint },
+        ]);
+      }
+    } catch (error) {
+      console.error('Could not print the created bill:', error);
+      Alert.alert('Print failed, retry?', 'Check that the printer is on and connected.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Retry', onPress: handlePrint },
+      ]);
+    } finally {
+      setPrinting(false);
+    }
+  }
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -93,15 +121,34 @@ export default function CreatedBillModal({ bill, onClose }) {
               </View>
             </View>
 
+            <View style={styles.paymentQr}>
+              <Text style={styles.paymentQrLabel}>Scan to Pay</Text>
+              <Image
+                source={paymentQr}
+                style={styles.paymentQrImage}
+                resizeMode="contain"
+                accessibilityLabel="Payment QR code"
+              />
+            </View>
+
             <Text style={styles.note}>
               Amounts are authoritative from the server. Payments are recorded from the
               Sessions billing flow.
             </Text>
           </ScrollView>
 
-          <Pressable style={styles.closeButton} onPress={onClose} accessibilityRole="button">
-            <Text style={styles.closeButtonText}>New Bill</Text>
-          </Pressable>
+          <View style={styles.actions}>
+            <Pressable
+              style={[styles.printButton, printing && styles.disabledButton]}
+              onPress={handlePrint}
+              disabled={printing}
+              accessibilityRole="button">
+              <Text style={styles.printButtonText}>{printing ? 'Printing…' : 'Print Bill'}</Text>
+            </Pressable>
+            <Pressable style={styles.closeButton} onPress={onClose} accessibilityRole="button">
+              <Text style={styles.closeButtonText}>New Bill</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Modal>
@@ -227,18 +274,50 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: COLORS.revenue,
   },
+  paymentQr: {
+    alignItems: 'center',
+    marginTop: SPACING.lg,
+  },
+  paymentQrLabel: {
+    marginBottom: SPACING.sm,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  paymentQrImage: {
+    width: 150,
+    height: 150,
+  },
   note: {
     marginTop: SPACING.md,
     fontSize: 12,
     color: COLORS.muted,
     textAlign: 'center',
   },
-  closeButton: {
+  actions: {
     marginTop: SPACING.md,
+    gap: SPACING.sm,
+  },
+  printButton: {
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+  },
+  printButtonText: {
+    color: COLORS.accent,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  closeButton: {
     paddingVertical: SPACING.lg,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     backgroundColor: COLORS.accent,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   closeButtonText: {
     color: '#ffffff',

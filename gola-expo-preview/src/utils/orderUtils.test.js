@@ -15,6 +15,7 @@ const {
   buildSession,
   upsertSession,
   applyFilters,
+  filterSessionsByPeriod,
   getOrderActions,
   canCancelOrder,
   formatTime,
@@ -214,6 +215,40 @@ test('applyFilters combines status and search', () => {
   ];
   assert.equal(applyFilters(sessions, { status: 'PLACED', query: 'asha' }).length, 1);
   assert.equal(applyFilters(sessions, { status: 'COMPLETED', query: 'ravi' }).length, 0);
+});
+
+test('filterSessionsByPeriod filters sessions by local calendar day and excludes future dates', () => {
+  const now = new Date(2026, 10, 1, 15, 0);
+  const sessions = [
+    { sessionId: 'today', createdAt: new Date(2026, 10, 1, 0, 0) },
+    { sessionId: 'yesterday', createdAt: new Date(2026, 9, 31, 23, 59) },
+    { sessionId: 'future', createdAt: new Date(2026, 10, 1, 15, 1) },
+    { sessionId: 'invalid', createdAt: 'not-a-date' },
+  ];
+
+  assert.deepEqual(
+    filterSessionsByPeriod(sessions, 'today', now).map((session) => session.sessionId),
+    ['today'],
+  );
+});
+
+test('filterSessionsByPeriod clamps calendar month/year boundaries and accepts order dates', () => {
+  const now = new Date(2026, 2, 31, 15, 0);
+  const sessions = [
+    { sessionId: 'month-start', createdAt: new Date(2026, 1, 28, 0, 0) },
+    { sessionId: 'before-month', createdAt: new Date(2026, 1, 27, 23, 59) },
+    { sessionId: 'year-start', orders: [{ date: new Date(2025, 2, 31, 0, 0) }] },
+    { sessionId: 'before-year', createdAt: new Date(2025, 2, 30, 23, 59) },
+  ];
+
+  assert.deepEqual(
+    filterSessionsByPeriod(sessions, 'month', now).map((session) => session.sessionId),
+    ['month-start'],
+  );
+  assert.deepEqual(
+    filterSessionsByPeriod(sessions, 'year', now).map((session) => session.sessionId),
+    ['month-start', 'before-month', 'year-start'],
+  );
 });
 
 test('getOrderActions maps statuses to the exact backend apiValue', () => {

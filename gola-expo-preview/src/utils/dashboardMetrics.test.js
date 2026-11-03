@@ -14,6 +14,7 @@ const {
   istDayBounds,
   filterOrdersForIstDay,
   computeTodayStats,
+  computeTodayPosRevenue,
   buildTodayTrend,
   populatedTrendHours,
   computePopularItems,
@@ -71,6 +72,15 @@ test('cancelled orders are excluded from Total Revenue', () => {
     { status: 'ACCEPTED', totalAmount: 50 },
   ]);
   assert.equal(stats.totalRevenue, 300);
+});
+
+test('unpaid and cancelled orders are excluded from Total Revenue', () => {
+  const stats = computeStats([
+    { status: 'COMPLETED', paymentStatus: 'paid', totalAmount: 250 },
+    { status: 'PLACED', paymentStatus: 'unpaid', totalAmount: 500 },
+    { status: 'cancelled', paymentStatus: 'paid', totalAmount: 700 },
+  ]);
+  assert.equal(stats.totalRevenue, 250);
 });
 
 test('missing or invalid totalAmount does not produce NaN in revenue', () => {
@@ -162,6 +172,22 @@ test('computeTodayStats reports only the IST day, revenue excluding cancelled', 
   assert.equal(stats.totalRevenue, 350); // 250 + 100; cancelled 500 excluded
 });
 
+test('today trend excludes unpaid order revenue', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const trend = buildTodayTrend(
+    [
+      {
+        createdAt: '2026-10-10T19:00:00.000Z',
+        status: 'COMPLETED',
+        paymentStatus: 'unpaid',
+        totalAmount: 250,
+      },
+    ],
+    now,
+  );
+  assert.equal(trend[0].revenue, 0);
+});
+
 test('computeTodayStats handles empty and missing input safely', () => {
   const now = new Date('2026-10-11T03:30:00.000Z');
   assert.deepEqual(computeTodayStats([], now), {
@@ -176,6 +202,19 @@ test('computeTodayStats handles empty and missing input safely', () => {
     completedOrders: 0,
     totalRevenue: 0,
   });
+});
+
+test('computeTodayPosRevenue includes only paid, non-void POS bills from the IST day', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const bills = [
+    { origin: 'POS', status: 'OPEN', amountPaid: 125, createdAt: '2026-10-10T19:00:00.000Z' },
+    { origin: 'POS', status: 'SETTLED', amountPaid: 75, createdAt: '2026-10-11T17:00:00.000Z' },
+    { origin: 'POS', status: 'VOID', amountPaid: 0, createdAt: '2026-10-11T17:00:00.000Z' },
+    { origin: 'SESSION', status: 'SETTLED', amountPaid: 500, createdAt: '2026-10-11T17:00:00.000Z' },
+    { origin: 'POS', status: 'OPEN', amountPaid: 900, createdAt: '2026-10-10T18:29:00.000Z' },
+  ];
+
+  assert.equal(computeTodayPosRevenue(bills, now), 200);
 });
 
 test('buildTodayTrend returns 24 hourly buckets, grouping by IST hour', () => {
@@ -196,6 +235,20 @@ test('buildTodayTrend returns 24 hourly buckets, grouping by IST hour', () => {
   assert.equal(trend[22].revenue, 0); // cancelled order contributes no revenue
   assert.equal(trend[23].count, 0);
   assert.equal(trend[23].revenue, 0);
+});
+
+test('buildTodayTrend includes paid POS bill revenue without counting it as an order', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const orders = [
+    { createdAt: '2026-10-10T18:40:00.000Z', status: 'PLACED', totalAmount: 100 },
+  ];
+  const bills = [
+    { origin: 'POS', status: 'SETTLED', amountPaid: 60, createdAt: '2026-10-10T18:50:00.000Z' },
+  ];
+  const trend = buildTodayTrend(orders, now, bills);
+
+  assert.equal(trend[0].count, 1);
+  assert.equal(trend[0].revenue, 160);
 });
 
 test('buildTodayTrend handles empty orders and bad dates', () => {
@@ -240,6 +293,17 @@ test('populatedTrendHours returns [] when there are no orders today', () => {
   assert.deepEqual(populatedTrendHours(buildTodayTrend([], now)), []);
 });
 
+test('populatedTrendHours keeps an hour with POS revenue even without an order', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const bills = [
+    { origin: 'POS', status: 'SETTLED', amountPaid: 60, createdAt: '2026-10-10T18:50:00.000Z' },
+  ];
+  const populated = populatedTrendHours(buildTodayTrend([], now, bills));
+  assert.equal(populated.length, 1);
+  assert.equal(populated[0].count, 0);
+  assert.equal(populated[0].revenue, 60);
+});
+
 test('populatedTrendHours tolerates non-array input and malformed buckets', () => {
   assert.deepEqual(populatedTrendHours(null), []);
   assert.deepEqual(populatedTrendHours(undefined), []);
@@ -251,8 +315,9 @@ test('populatedTrendHours tolerates non-array input and malformed buckets', () =
     null,
   ];
   const populated = populatedTrendHours(mixed);
-  assert.equal(populated.length, 1);
+  assert.equal(populated.length, 2);
   assert.equal(populated[0].key, 'a');
+  assert.equal(populated[1].key, 'c');
 });
 
 test('buildTodayTrend only counts the current IST day around the boundary', () => {

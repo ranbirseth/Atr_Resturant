@@ -59,11 +59,19 @@ export async function getBillById(billId) {
   return api.get(`/billing/bills/${encodeURIComponent(billId)}`);
 }
 
-// Read-only bill listing for the Reviews & Analytics module (Phase 3). Returns
-// every bill as a PII-free DTO sorted newest first; IST range / origin /
-// audience / status filtering happens client-side from the returned array.
-export async function getBills() {
-  const data = await api.get('/billing/bills');
+// Read-only bill listing. The billing API supports IST date range, origin,
+// audience, and status query filters.
+export async function getBills(options) {
+  const filters = options || {};
+  const query = Object.keys(filters)
+    .filter(function (key) {
+      return filters[key] !== undefined && filters[key] !== null && String(filters[key]).trim() !== '';
+    })
+    .map(function (key) {
+      return `${encodeURIComponent(key)}=${encodeURIComponent(String(filters[key]).trim())}`;
+    })
+    .join('&');
+  const data = await api.get(`/billing/bills${query ? `?${query}` : ''}`);
   return Array.isArray(data) ? data : [];
 }
 

@@ -1,15 +1,17 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Image, StyleSheet, Text, View} from 'react-native';
 import {DrawerContentScrollView, DrawerItemList} from '@react-navigation/drawer';
 
-// Custom drawer body: brand header + the 7 admin sections + a small footer.
+// Custom drawer body: brand header + navigation items + a small footer.
 export default function AppDrawerContent(props) {
   return (
     <DrawerContentScrollView {...props}>
       <View style={styles.brand}>
-        <View style={styles.logo}>
-          <Text style={styles.logoText}>G</Text>
-        </View>
+        <Image
+          source={require('../../assets/golalog.jpeg')}
+          style={styles.logo}
+          accessibilityLabel="Gola Restaurant logo"
+        />
         <View style={styles.brandText}>
           <Text style={styles.brandTitle}>Gola Admin</Text>
           <Text style={styles.brandSubtitle}>Restaurant dashboard</Text>
@@ -38,14 +40,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: '#2c3e50',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '800',
+    backgroundColor: '#fff',
   },
   brandText: {
     flex: 1,

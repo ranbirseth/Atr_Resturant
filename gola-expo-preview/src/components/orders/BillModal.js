@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import thermalPrinterService from '../../services/thermalPrinterService';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import { useBottomInset } from '../../hooks/useBottomInset';
 import { formatTime } from '../../utils/orderUtils';
@@ -45,6 +47,8 @@ import {
   makeIdempotencyKey,
   normalizeAudience,
 } from '../../utils/audienceBilling';
+
+const paymentQr = require('../../../assets/payment-qr.png');
 
 function chip(palette, label) {
   return (
@@ -102,6 +106,7 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
   const [error, setError] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const [reversingId, setReversingId] = useState(null);
   const [amountText, setAmountText] = useState('');
@@ -114,6 +119,7 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
   const [sessionKey] = useState(function () {
     return makeIdempotencyKey('sess');
   });
+  const paymentAttemptRef = useRef(null);
 
   const handleBillChange = useCallback(
     function (next) {
@@ -206,8 +212,27 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
       }
       setPaying(true);
       setError(null);
+      const activePayment = paymentAttemptRef.current;
+      const paymentAttempt =
+        activePayment &&
+        activePayment.billId === bill._id &&
+        activePayment.amount === check.amount &&
+        activePayment.method === method
+          ? activePayment
+          : {
+              billId: bill._id,
+              amount: check.amount,
+              method,
+              idempotencyKey: makeIdempotencyKey('session-payment'),
+            };
+      paymentAttemptRef.current = paymentAttempt;
       try {
-        const response = await recordPaymentApi(bill._id, { amount: check.amount, method });
+        const response = await recordPaymentApi(bill._id, {
+          amount: check.amount,
+          method,
+          idempotencyKey: paymentAttempt.idempotencyKey,
+        });
+        paymentAttemptRef.current = null;
         const next = response && response.bill ? response.bill : response;
         handleBillChange(next);
       } catch (e) {
@@ -303,6 +328,30 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
     },
     [bill, handleBillChange],
   );
+
+  async function handlePrint() {
+    if (!bill || printing) {
+      return;
+    }
+    setPrinting(true);
+    try {
+      const printed = await thermalPrinterService.printReceipt(bill);
+      if (!printed) {
+        Alert.alert('Print failed, retry?', 'Check that the printer is on and connected.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: handlePrint },
+        ]);
+      }
+    } catch (printError) {
+      console.error('Could not print the session bill:', printError);
+      Alert.alert('Print failed, retry?', 'Check that the printer is on and connected.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Retry', onPress: handlePrint },
+      ]);
+    } finally {
+      setPrinting(false);
+    }
+  }
 
   const billableCount = countBillableOrders(session && session.orders);
   const selectedAudience = normalizeAudience(audience);
@@ -436,7 +485,24 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
                       <Text style={styles.grandValue}>{formatCurrency(bill.balanceDue)}</Text>
                     </View>
                   </View>
+                  <View style={styles.paymentQr}>
+                    <Text style={styles.paymentQrLabel}>Scan to Pay</Text>
+                    <Image
+                      source={paymentQr}
+                      style={styles.paymentQrImage}
+                      resizeMode="contain"
+                      accessibilityLabel="Payment QR code"
+                    />
+                  </View>
                 </View>
+
+                <Pressable
+                  disabled={printing}
+                  style={[styles.printBtn, printing && styles.btnDisabled]}
+                  onPress={handlePrint}
+                  accessibilityRole="button">
+                  <Text style={styles.printText}>{printing ? 'Printing...' : 'Print Bill'}</Text>
+                </Pressable>
 
                 {payments.length > 0 ? (
                   <View style={styles.card}>
@@ -698,6 +764,20 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: COLORS.text,
   },
+  paymentQr: {
+    alignItems: 'center',
+    marginTop: SPACING.lg,
+  },
+  paymentQrLabel: {
+    marginBottom: SPACING.sm,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  paymentQrImage: {
+    width: 150,
+    height: 150,
+  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '800',
@@ -789,6 +869,19 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     alignItems: 'center',
     marginTop: SPACING.md,
+  },
+  printBtn: {
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    backgroundColor: COLORS.surface,
+  },
+  printText: {
+    color: COLORS.accent,
+    fontSize: 14,
+    fontWeight: '800',
   },
   primaryText: {
     color: '#ffffff',

@@ -341,6 +341,47 @@ function applyFilters(sessions, options) {
   });
 }
 
+function filterSessionsByPeriod(sessions, period, now) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const currentTime = parseDate(now) || new Date();
+  const start = new Date(currentTime);
+
+  if (period === 'today') {
+    start.setHours(0, 0, 0, 0);
+  } else if (period === 'month' || period === 'year') {
+    const dayOfMonth = start.getDate();
+    start.setDate(1);
+    if (period === 'month') {
+      start.setMonth(start.getMonth() - 1);
+    } else {
+      start.setFullYear(start.getFullYear() - 1);
+    }
+    const lastDayOfMonth = new Date(
+      start.getFullYear(),
+      start.getMonth() + 1,
+      0,
+    ).getDate();
+    start.setDate(Math.min(dayOfMonth, lastDayOfMonth));
+    start.setHours(0, 0, 0, 0);
+  } else {
+    return list;
+  }
+
+  return list.filter(function (session) {
+    const sessionDate =
+      parseDate(session && session.createdAt) ||
+      earliestDate(
+        Array.isArray(session && session.orders) ? session.orders : [],
+        'createdAt',
+      ) ||
+      earliestDate(
+        Array.isArray(session && session.orders) ? session.orders : [],
+        'date',
+      );
+    return sessionDate && sessionDate >= start && sessionDate <= currentTime;
+  });
+}
+
 // Available per-order actions. apiValue strings are the exact raw values the
 // backend stores. "Preparing"/"Ready" use the legacy casing on purpose: they are
 // the only enum values in server/models/Order.js recognised by the grouped
@@ -387,6 +428,7 @@ module.exports = {
   buildSession: buildSession,
   upsertSession: upsertSession,
   applyFilters: applyFilters,
+  filterSessionsByPeriod: filterSessionsByPeriod,
   getOrderActions: getOrderActions,
   canCancelOrder: canCancelOrder,
   formatTime: formatTime,

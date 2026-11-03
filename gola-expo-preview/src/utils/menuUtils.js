@@ -77,7 +77,7 @@ function formatPriceExact(value) {
 // remote URL or a data URI, so anything else (blank, whitespace, a bare
 // filename, an invalid scheme) is treated as "no image" and the caller shows a
 // neutral placeholder. Never mutates the item.
-function itemImageUrl(item) {
+function itemImageUrl(item, apiBaseUrl) {
   if (!item || typeof item.image !== 'string') {
     return null;
   }
@@ -87,6 +87,13 @@ function itemImageUrl(item) {
   }
   if (/^https?:\/\//i.test(url) || /^data:image\//i.test(url)) {
     return url;
+  }
+  if (url.startsWith('/uploads/')) {
+    const baseUrl = String(apiBaseUrl || '')
+      .trim()
+      .replace(/\/api\/?$/i, '')
+      .replace(/\/+$/, '');
+    return baseUrl ? baseUrl + url : null;
   }
   return null;
 }

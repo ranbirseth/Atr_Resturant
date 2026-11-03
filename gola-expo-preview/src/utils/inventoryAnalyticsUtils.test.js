@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const {
   isCommittedMovement,
   filterCommittedInRange,
+  calculateConsumptionCost,
   summarizeMovements,
   itemsAddedInRange,
   buildItemActivity,
@@ -97,6 +98,30 @@ test('filterCommittedInRange drops RESERVED, out-of-range and undatable movement
   assert.ok(!inRange.some((m) => m.status === 'RESERVED'), 'RESERVED must be excluded');
   assert.ok(!inRange.some((m) => m.ingredientId === 'tomato' && m.quantityDelta === -99), 'reserved -99 must never appear');
   assert.equal(filterCommittedInRange([{ ingredientId: 'x', type: 'CONSUMPTION', quantityDelta: -1, movementDate: 'bad' }], FROM_7D, TO_7D).length, 0);
+});
+
+test('calculateConsumptionCost uses movement cost then purchase price and excludes unpriced usage', () => {
+  const start = Date.UTC(2026, 9, 9);
+  const end = start + DAY - 1;
+  const movements = [
+    {ingredientId: 'snapshot', type: 'CONSUMPTION', quantityDelta: -2, unitCost: 3, movementDate: new Date(start + 1)},
+    {ingredientId: 'fallback', type: 'CONSUMPTION', quantityDelta: -1.5, movementDate: new Date(start + 2)},
+    {ingredientId: 'unknown', type: 'CONSUMPTION', quantityDelta: -4, movementDate: new Date(start + 3)},
+    {ingredientId: 'snapshot', type: 'CONSUMPTION', quantityDelta: -50, status: 'RESERVED', movementDate: new Date(start + 4)},
+    {ingredientId: 'fallback', type: 'RESTOCK', quantityDelta: 10, movementDate: new Date(start + 5)},
+    {ingredientId: 'snapshot', type: 'CONSUMPTION', quantityDelta: -99, unitCost: 2, movementDate: new Date(end + 1)},
+  ];
+  const ingredients = [
+    {_id: 'snapshot', purchasePrice: 10},
+    {_id: 'fallback', purchasePrice: 4},
+    {_id: 'unknown', purchasePrice: null},
+  ];
+
+  assert.deepEqual(calculateConsumptionCost(movements, ingredients, start, end), {
+    totalCost: 12,
+    consumptionMovements: 3,
+    unpricedMovements: 1,
+  });
 });
 
 test('summarizeMovements splits restock / opening / consumption / adjustment', () => {

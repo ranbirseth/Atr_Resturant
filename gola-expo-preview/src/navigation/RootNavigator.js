@@ -1,4 +1,5 @@
 import React from 'react';
+import {Image, StyleSheet, Text, View} from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
 import {createDrawerNavigator} from '@react-navigation/drawer';
 import {Ionicons} from '@expo/vector-icons';
@@ -16,6 +17,22 @@ import AppDrawerContent from './AppDrawerContent';
 import ScreenFrame from './ScreenFrame';
 
 const Drawer = createDrawerNavigator();
+const BRAND_LOGO = require('../../assets/golalog.jpeg');
+
+function BrandedHeaderTitle({children}) {
+  return (
+    <View style={styles.headerTitle}>
+      <Image
+        source={BRAND_LOGO}
+        style={styles.headerLogo}
+        accessibilityLabel="Gola Restaurant logo"
+      />
+      <Text style={styles.headerTitleText} numberOfLines={1}>
+        {children}
+      </Text>
+    </View>
+  );
+}
 
 // Wrap a screen so its content clears the Android bottom navigation/gesture
 // bar. Kept at module scope so the wrapped component identity is stable across
@@ -41,7 +58,7 @@ const FramedReviewsAnalytics = frameScreen(ReviewsAnalyticsScreen);
 const FramedBilling = frameScreen(BillingScreen);
 const FramedSettings = frameScreen(SettingsScreen);
 
-// The 7 admin sections, opened from the hamburger drawer in the top header.
+// Admin sections are opened from the hamburger drawer in the top header.
 export default function RootNavigator() {
   return (
     <NavigationContainer>
@@ -52,6 +69,8 @@ export default function RootNavigator() {
           headerStyle: {backgroundColor: '#2c3e50'},
           headerTintColor: '#fff',
           headerTitleStyle: {fontWeight: '700'},
+          headerTitle: (props) => <BrandedHeaderTitle {...props} />,
+          headerTitleAlign: 'left',
           headerRight: () => <ConnectionStatus compact />,
           drawerActiveTintColor: '#fff',
           drawerActiveBackgroundColor: '#2c3e50',
@@ -143,3 +162,24 @@ export default function RootNavigator() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  headerTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+  },
+  headerLogo: {
+    width: 36,
+    height: 36,
+    marginRight: 8,
+    borderRadius: 6,
+    backgroundColor: '#fff',
+  },
+  headerTitleText: {
+    flexShrink: 1,
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+});

@@ -5,6 +5,7 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -24,6 +25,7 @@ import {
   FILTER_OPTIONS,
   applyFilters,
   buildSession,
+  filterSessionsByPeriod,
   formatCurrency,
   upsertSession,
 } from '../../utils/orderUtils';
@@ -31,6 +33,11 @@ import {
 const LOCAL_UPDATE_WINDOW_MS = 2500;
 const BANNER_TIMEOUT_MS = 6000;
 const TWO_COLUMN_MIN_WIDTH = 720;
+const DATE_PERIOD_OPTIONS = [
+  { value: 'today', label: 'Today (1 Day)' },
+  { value: 'month', label: '1 Month' },
+  { value: 'year', label: '1 Year' },
+];
 
 function toSessions(data) {
   if (!Array.isArray(data)) {
@@ -62,6 +69,7 @@ export default function OrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [datePeriod, setDatePeriod] = useState('today');
   const [filter, setFilter] = useState('All');
   const [query, setQuery] = useState('');
   const [selectedSession, setSelectedSession] = useState(null);
@@ -247,11 +255,18 @@ export default function OrdersScreen() {
     [billSession, applyBill],
   );
 
+  const dateFilteredSessions = useMemo(
+    function () {
+      return filterSessionsByPeriod(sessions, datePeriod);
+    },
+    [sessions, datePeriod],
+  );
+
   const filteredSessions = useMemo(
     function () {
-      return applyFilters(sessions, { status: filter, query: query });
+      return applyFilters(dateFilteredSessions, { status: filter, query: query });
     },
-    [sessions, filter, query],
+    [dateFilteredSessions, filter, query],
   );
 
   const numColumns = width >= TWO_COLUMN_MIN_WIDTH ? 2 : 1;
@@ -291,6 +306,26 @@ export default function OrdersScreen() {
       <View style={styles.headerArea}>
         <Text style={styles.title}>Orders Management</Text>
         <Text style={styles.subtitle}>Manage customer orders grouped by visit sessions.</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.datePeriodRow}>
+          {DATE_PERIOD_OPTIONS.map(function (option) {
+            const active = option.value === datePeriod;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => setDatePeriod(option.value)}
+                style={[styles.datePeriodChip, active && styles.datePeriodChipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}>
+                <Text style={[styles.datePeriodText, active && styles.datePeriodTextActive]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
         <SearchBar value={query} onChangeText={setQuery} />
         <FilterChips options={FILTER_OPTIONS} value={filter} onChange={setFilter} />
         {error && sessions !== null ? (
@@ -330,11 +365,15 @@ export default function OrdersScreen() {
           renderItem={renderItem}
           ListEmptyComponent={
             <View style={styles.emptyBox}>
-              <Text style={styles.emptyTitle}>No orders found</Text>
+              <Text style={styles.emptyTitle}>
+                {dateFilteredSessions.length === 0
+                  ? 'No orders found for this period'
+                  : 'No orders found'}
+              </Text>
               <Text style={styles.centerText}>
-                {sessions && sessions.length > 0
-                  ? 'Try adjusting your filters or search query.'
-                  : 'Orders will appear here as customers place them.'}
+                {dateFilteredSessions.length === 0
+                  ? 'Try another time period to see orders.'
+                  : 'Try adjusting your filters or search query.'}
               </Text>
             </View>
           }
@@ -392,6 +431,30 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     marginTop: SPACING.xs,
     marginBottom: SPACING.md,
+  },
+  datePeriodRow: {
+    paddingBottom: SPACING.sm,
+  },
+  datePeriodChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginRight: SPACING.sm,
+  },
+  datePeriodChipActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  datePeriodText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.muted,
+  },
+  datePeriodTextActive: {
+    color: '#ffffff',
   },
   actionError: {
     backgroundColor: COLORS.dangerBg,

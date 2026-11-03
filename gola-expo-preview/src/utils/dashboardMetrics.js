@@ -71,6 +71,13 @@ function isCancelledOrder(order) {
   );
 }
 
+function isPaidOrder(order) {
+  return (
+    order != null &&
+    String(order.paymentStatus || 'paid').trim().toUpperCase() !== 'UNPAID'
+  );
+}
+
 // Both normalizations accept legacy 'Pending'/'Completed'/'Cancelled' via
 // normalizeStatus, so legacy orders are counted with the new status system.
 
@@ -142,7 +149,7 @@ function filterNonCancelledOrders(orders) {
 // and is therefore counted in the total, but never in revenue).
 // Pending Orders: PENDING + PLACED (cancelled is never pending).
 // Completed Orders: COMPLETED (+ legacy "Completed" after normalization).
-// Total Revenue: sum of totalAmount for non-cancelled orders only.
+// Total Revenue: sum of totalAmount for paid, non-cancelled orders only.
 function computeStats(orders) {
   const list = Array.isArray(orders) ? orders : [];
   let pendingOrders = 0;
@@ -160,7 +167,7 @@ function computeStats(orders) {
     if (isCompletedOrder(order)) {
       completedOrders += 1;
     }
-    if (!isCancelledOrder(order)) {
+    if (!isCancelledOrder(order) && isPaidOrder(order)) {
       totalRevenue += toNumber(order.totalAmount);
     }
   }
@@ -178,13 +185,27 @@ function computeTodayStats(orders, now) {
   return computeStats(filterOrdersForIstDay(orders, now));
 }
 
+// POS bills are separate from Orders and only contribute revenue after a
+// payment is recorded. Voided bills are excluded; amountPaid is net of reversals.
+function computeTodayPosRevenue(bills, now) {
+  const today = filterOrdersForIstDay(bills, now);
+  return today.reduce(function (total, bill) {
+    if (
+      !bill ||
+      String(bill.origin || '').trim().toUpperCase() !== 'POS' ||
+      ['OPEN', 'SETTLED'].indexOf(String(bill.status || '').trim().toUpperCase()) === -1
+    ) {
+      return total;
+    }
+    return total + Math.max(0, toNumber(bill.amountPaid));
+  }, 0);
+}
+
 // Hourly order + revenue profile for the current IST day.
-// Returns 24 buckets (one per IST hour, oldest first); only hours with orders
-// ever carry a non-zero value. Count includes every order placed in the hour;
-// revenue sums non-cancelled orders only (same definition as Total Revenue).
-// Rendering should narrow this to the hours that actually have orders via
-// `populatedTrendHours` so empty hours are never drawn.
-function buildTodayTrend(orders, now) {
+// Returns 24 buckets (one per IST hour, oldest first). Count includes orders;
+// revenue includes non-cancelled orders and paid POS bills. Rendering narrows
+// this to hours with orders or revenue via `populatedTrendHours`.
+function buildTodayTrend(orders, now, posBills) {
   const today = filterOrdersForIstDay(orders, now);
   const dayKey = istDateKey(now);
   const buckets = [];
@@ -213,22 +234,38 @@ function buildTodayTrend(orders, now) {
       continue;
     }
     buckets[hour].count += 1;
-    if (!isCancelledOrder(order)) {
+    if (!isCancelledOrder(order) && isPaidOrder(order)) {
       buckets[hour].revenue += toNumber(order.totalAmount);
     }
+  }
+  const todayPosBills = filterOrdersForIstDay(posBills, now);
+  for (let i = 0; i < todayPosBills.length; i++) {
+    const bill = todayPosBills[i];
+    if (
+      !bill ||
+      String(bill.origin || '').trim().toUpperCase() !== 'POS' ||
+      ['OPEN', 'SETTLED'].indexOf(String(bill.status || '').trim().toUpperCase()) === -1 ||
+      !bill.createdAt
+    ) {
+      continue;
+    }
+    const created = new Date(bill.createdAt);
+    if (Number.isNaN(created.getTime())) {
+      continue;
+    }
+    const shifted = new Date(created.getTime() + IST_OFFSET_MS);
+    buckets[shifted.getUTCHours()].revenue += Math.max(0, toNumber(bill.amountPaid));
   }
   return buckets;
 }
 
-// Narrow a trend built by `buildTodayTrend` (or any hourly list) to the hours
-// that actually contain at least one order (count > 0). Empty hours are dropped
-// so the chart never draws zero-height bars with confusing labels. The input
-// order is preserved (buildTodayTrend already returns hours oldest-first).
-// Non-array input yields [].
+// Narrow a trend built by `buildTodayTrend` (or any hourly list) to hours with
+// orders or recognized revenue. POS bills can add revenue without creating an
+// order, so those hours must remain visible in the trend summary.
 function populatedTrendHours(trend) {
   const list = Array.isArray(trend) ? trend : [];
   return list.filter(function (hour) {
-    return toNumber(hour && hour.count) > 0;
+    return toNumber(hour && hour.count) > 0 || toNumber(hour && hour.revenue) > 0;
   });
 }
 
@@ -362,6 +399,7 @@ module.exports = {
   filterOrdersForIstDay: filterOrdersForIstDay,
   filterNonCancelledOrders: filterNonCancelledOrders,
   computeTodayStats: computeTodayStats,
+  computeTodayPosRevenue: computeTodayPosRevenue,
   buildTodayTrend: buildTodayTrend,
   populatedTrendHours: populatedTrendHours,
   computePopularItems: computePopularItems,

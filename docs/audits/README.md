@@ -1568,3 +1568,35 @@ New/updated test coverage (the 11 required scenarios):
 - Only `server/` (inventory deletion path + its tests) and `gola-expo-preview/` (inventory delete messages) and docs touched. No new routes, no schema change, no dependencies added, no deploy, no production DB reads/writes, no auth changes. Protected directories untouched. Destructive history policy was owner-approved before implementation.
 
 **Owner review requested before any further work.**
+
+---
+
+## Phase 4.3 — Pre-APK App-Wide Scroll Regression Audit (2026-10-12) — READ-ONLY
+
+**Status:** READ-ONLY audit. No source modifications. No APK build/deploy. Protected directories (`client/`, `AdminDashbord/`, `print-service/`, `react native frontend/`) untouched.
+
+### 1) Phase 4.1 integrity
+All Phase 4.1 files intact: useBottomInset, ScreenFrame (wraps all 8 drawer screens), RootNavigator, FormModal, SessionDetailsModal/BillModal (flexShrink:1 + insets), CreatedBillModal, BillingScreen. 
+
+### 2) App-wide inspection
+All screens inspected; safe-area handled only via `react-native-safe-area-context`; no absolute `bottom:` overlays; modals use insets + `flexShrink:1`. Minor edge case: Billing narrow cart modal auto-sized block vs `height:'80%'` on very short screens (not a regression).
+
+### 3) Phase 4.2 regression findings
+No scroll/safe-area/layout regression (deletion changes are limited to server controller, inventory service comment, and InventoryScreen Alerts/text).
+
+### 4) Results
+- Expo unit: 182/182 pass
+- Lint: 0 errors, 4 pre-existing warnings (3 unicode-bom, 1 unused catch)
+- Android export: success (Hermes .hbc 3.9MB); dist removed
+- Server inventory: 24/24 pass; full server: 129/129 pass
+
+### 5) Dev vs APK
+Source correct; physical APK verification not performed here (device unavailable). 
+
+### 6) Manual test matrix (owner device)
+[ ] Dashboard scroll to end above nav bar; [ ] Orders + SessionDetails/BillModal scroll fully; [ ] Billing narrow/wide cart + keyboard; [ ] all other screens/modals scroll to bottom above system bar.
+
+### 7) Next action
+Ready for APK build (audit complete). No code changes made. 
+
+**Owner review requested before any further work.**

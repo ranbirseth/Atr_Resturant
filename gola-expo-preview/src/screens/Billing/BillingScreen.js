@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -14,13 +15,15 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import StateView from '../../components/menu/StateView';
 import BillPanel from './BillPanel';
 import CreatedBillModal from './CreatedBillModal';
 import { getItems } from '../../api/menuService';
 import { createPosBill } from '../../api/billService';
-import { formatPrice, getErrorMessage } from '../../utils/menuUtils';
+import { getBaseUrl } from '../../api/config';
+import { formatPrice, getErrorMessage, itemImageUrl } from '../../utils/menuUtils';
 import { billingErrorMessage } from '../../utils/billUtils';
 import {
   addItem,
@@ -42,6 +45,28 @@ import {
 import { COLORS, RADIUS, SPACING } from '../../theme';
 
 const WIDE_MIN_WIDTH = 900;
+
+function BillingMenuImage({ url }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!url || failed) {
+    return (
+      <View style={styles.itemImagePlaceholder}>
+        <Ionicons name="restaurant-outline" size={26} color={COLORS.muted} />
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: url }}
+      style={styles.itemImage}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+      accessibilityLabel="Menu item image"
+    />
+  );
+}
 
 // POS Billing screen: pick menu items, choose who the bill is for (Customer or
 // Staff), and create a server-priced bill via POST /api/billing/pos/bills. The
@@ -247,24 +272,30 @@ export default function BillingScreen() {
   function renderMenuCard({ item }) {
     const sellable = isItemSellable(item);
     const qty = cartQuantity(cart, item._id);
+    const imageUrl = itemImageUrl(item, getBaseUrl());
     return (
       <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardName} numberOfLines={2}>
-            {item.name}
-          </Text>
-          <View style={[styles.badge, item.isVeg === false ? styles.nonVegBadge : styles.vegBadge]}>
-            <Text style={[styles.badgeText, item.isVeg === false ? styles.nonVegText : styles.vegText]}>
-              {item.isVeg === false ? 'Non-Veg' : 'Veg'}
+        <View style={styles.cardInfoRow}>
+          <BillingMenuImage key={imageUrl || 'no-image'} url={imageUrl} />
+          <View style={styles.cardDetails}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardName} numberOfLines={2}>
+                {item.name}
+              </Text>
+              <View style={[styles.badge, item.isVeg === false ? styles.nonVegBadge : styles.vegBadge]}>
+                <Text style={[styles.badgeText, item.isVeg === false ? styles.nonVegText : styles.vegText]}>
+                  {item.isVeg === false ? 'Non-Veg' : 'Veg'}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.cardCategory}>{item.category}</Text>
+            <Text style={styles.cardPrice}>{formatPrice(item.price)}</Text>
+            <Text style={[styles.cardAvail, !sellable && styles.cardAvailOff]}>
+              {item.available === false ? 'Unavailable' : 'Available'}
             </Text>
           </View>
         </View>
-
-        <Text style={styles.cardCategory}>{item.category}</Text>
-        <Text style={styles.cardPrice}>{formatPrice(item.price)}</Text>
-        <Text style={[styles.cardAvail, !sellable && styles.cardAvailOff]}>
-          {item.available === false ? 'Unavailable' : 'Available'}
-        </Text>
 
         {!sellable ? (
           <View style={styles.addButtonDisabled}>
@@ -561,6 +592,31 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     padding: SPACING.lg,
     marginBottom: SPACING.md,
+  },
+  cardInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.md,
+  },
+  itemImage: {
+    width: 64,
+    height: 64,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.background,
+  },
+  itemImagePlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  cardDetails: {
+    flex: 1,
+    minWidth: 0,
   },
   cardHeader: {
     flexDirection: 'row',

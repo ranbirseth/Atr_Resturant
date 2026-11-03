@@ -15,6 +15,7 @@ const orderSchema = new mongoose.Schema({
         }
     ],
     totalAmount: { type: Number, required: true }, // This is the Final Payable Amount
+    paymentStatus: { type: String, enum: ['unpaid', 'paid'], default: 'paid' },
     grossTotal: { type: Number }, // Subtotal before discount
     couponCode: { type: String },
     discountAmount: { type: Number, default: 0 },

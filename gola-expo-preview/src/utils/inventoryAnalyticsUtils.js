@@ -60,6 +60,47 @@ function movementQty(movement) {
   return toNumber(movement && movement.quantityDelta);
 }
 
+function calculateConsumptionCost(movements, ingredients, fromMs, toMs) {
+  const consumption = filterCommittedInRange(movements, fromMs, toMs).filter(function (movement) {
+    return normalizeType(movement) === 'CONSUMPTION';
+  });
+  const stock = toStock(ingredients);
+  let totalCost = 0;
+  let unpricedMovements = 0;
+
+  for (let i = 0; i < consumption.length; i++) {
+    const movement = consumption[i];
+    const ingredient = stock.get(String(movement.ingredientId || ''));
+    const movementCost =
+      movement.unitCost === null || movement.unitCost === undefined || movement.unitCost === ''
+        ? NaN
+        : Number(movement.unitCost);
+    const purchasePrice = ingredient && ingredient.purchasePrice;
+    const ingredientCost =
+      purchasePrice === null || purchasePrice === undefined || purchasePrice === ''
+        ? NaN
+        : Number(purchasePrice);
+    const unitCost =
+      Number.isFinite(movementCost) && movementCost >= 0
+        ? movementCost
+        : Number.isFinite(ingredientCost) && ingredientCost >= 0
+          ? ingredientCost
+          : null;
+
+    if (unitCost === null) {
+      unpricedMovements += 1;
+      continue;
+    }
+    totalCost += Math.abs(movementQty(movement)) * unitCost;
+  }
+
+  return {
+    totalCost: round2(totalCost),
+    consumptionMovements: consumption.length,
+    unpricedMovements: unpricedMovements,
+  };
+}
+
 // Movements whose movementDate is a valid instant inside [fromMs, toMs]
 // (inclusive) and whose status is not RESERVED.
 function filterCommittedInRange(movements, fromMs, toMs) {
@@ -288,6 +329,7 @@ module.exports = {
   RESERVED: RESERVED,
   isCommittedMovement: isCommittedMovement,
   filterCommittedInRange: filterCommittedInRange,
+  calculateConsumptionCost: calculateConsumptionCost,
   summarizeMovements: summarizeMovements,
   itemsAddedInRange: itemsAddedInRange,
   buildItemActivity: buildItemActivity,

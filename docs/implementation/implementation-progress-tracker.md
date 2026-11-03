@@ -606,3 +606,13 @@ See [Phase 1E report](../audits/README.md) (§E.0–E.1). Overall: `IMPLEMENTED 
 **Remaining / blockers:** no live-endpoint or physical-device verification (no device/backend tooling); cascade intentionally non-transactional (dependents deleted first; each step idempotent/retryable). `src/utils/analyticsLoadUtils.js` + `.test.js` remain untracked and pre-date this work. No blockers.
 
 **Owner review required before any further work.** Full report: `docs/audits/README.md` section C.3.10.
+
+---
+
+## PHASE 4.3 "PRE-APK APP-WIDE SCROLL REGRESSION AUDIT" (2026-10-12): READ-ONLY - COMPLETE
+
+**Status:** READ-ONLY audit. No source modifications. No APK build/deploy. Protected directories untouched. Full report: `docs/audits/README.md` (Phase 4.3 section).
+
+**Key findings:** Phase 4.1 fixes intact; no Phase 4.2 scroll regressions. Minor Billing narrow cart edge case on very short screens. Automated: Expo unit 182/182, lint 0 errors/4 pre-existing warnings, Android export success, server 129/129. Physical APK verification not performed.
+
+**Owner review required before any further work.** Full report: `docs/audits/README.md` (Phase 4.3).

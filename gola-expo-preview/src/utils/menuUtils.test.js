@@ -91,6 +91,17 @@ test('itemImageUrl accepts http(s)/data image URLs and trims them', () => {
   assert.equal(itemImageUrl({ image: 'data:image/png;base64,AAAA' }), 'data:image/png;base64,AAAA');
 });
 
+test('itemImageUrl resolves uploaded image paths against the API host', () => {
+  assert.equal(
+    itemImageUrl({ image: '/uploads/image.jpg' }, 'https://api.example.com/api'),
+    'https://api.example.com/uploads/image.jpg',
+  );
+  assert.equal(
+    itemImageUrl({ image: '/uploads/image.jpg' }, 'http://localhost:5000/api/'),
+    'http://localhost:5000/uploads/image.jpg',
+  );
+});
+
 test('itemImageUrl rejects missing/blank/invalid image values', () => {
   assert.equal(itemImageUrl(null), null);
   assert.equal(itemImageUrl(undefined), null);
@@ -102,6 +113,7 @@ test('itemImageUrl rejects missing/blank/invalid image values', () => {
   assert.equal(itemImageUrl({ image: 'a.jpg' }), null);
   assert.equal(itemImageUrl({ image: 'ftp://host/a.jpg' }), null);
   assert.equal(itemImageUrl({ image: 'javascript:alert(1)' }), null);
+  assert.equal(itemImageUrl({ image: '/uploads/image.jpg' }), null);
 });
 
 test('audiencePrice: CUSTOMER unchanged, STAFF derived from price (legacy value ignored)', () => {

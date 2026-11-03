@@ -10,15 +10,22 @@ import {
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 
+import {getBills} from '../../api/billService';
 import {getLowStockAlerts, getOrders} from '../../api/dashboardService';
+import {getIngredients, getMovements} from '../../api/inventoryService';
 import {
   buildTodayTrend,
   computeTodayPopularItems,
+  computeTodayPosRevenue,
   computeTodayStats,
   formatCurrency,
   formatNumber,
+  istDayBounds,
+  istDateKey,
 } from '../../utils/dashboardMetrics';
+import {calculateConsumptionCost} from '../../utils/inventoryAnalyticsUtils';
 import StatCard from '../../components/dashboard/StatCard';
+import StaffCart from '../../components/dashboard/StaffCart';
 import OrdersTrend from '../../components/dashboard/OrdersTrend';
 import PopularItems from '../../components/dashboard/PopularItems';
 import LowStockAlerts from '../../components/dashboard/LowStockAlerts';
@@ -35,6 +42,13 @@ function SkeletonBlock({height, style}) {
 export default function DashboardScreen() {
   const {width} = useWindowDimensions();
   const [orders, setOrders] = useState(null);
+  const [posBills, setPosBills] = useState([]);
+  const [inventoryUsageCost, setInventoryUsageCost] = useState({
+    totalCost: 0,
+    consumptionMovements: 0,
+    unpricedMovements: 0,
+  });
+  const [inventoryCostError, setInventoryCostError] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [viewedAt, setViewedAt] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -48,22 +62,71 @@ export default function DashboardScreen() {
       setLoading(true);
     }
     setError(null);
+    let succeeded = false;
     try {
-      const [ordersData, alertsData] = await Promise.all([
+      const now = new Date();
+      const {start, end} = istDayBounds(now);
+      const [ordersData, alertsData, posBillsData, inventoryCostResult] = await Promise.all([
         getOrders(),
         getLowStockAlerts().catch(function () {
           return [];
         }),
+        getBills({
+          origin: 'POS',
+          from: istDateKey(now),
+          to: istDateKey(now),
+        }),
+        Promise.all([
+          getMovements({
+            type: 'CONSUMPTION',
+            from: start.toISOString(),
+            to: new Date(end.getTime() - 1).toISOString(),
+            limit: 500,
+          }),
+          getIngredients(),
+        ])
+          .then(function ([movements, ingredients]) {
+            return {
+              cost: calculateConsumptionCost(
+                movements,
+                ingredients,
+                start.getTime(),
+                end.getTime() - 1,
+              ),
+              movementLimitReached: movements.length >= 500,
+            };
+          })
+          .catch(function (inventoryError) {
+            return {
+              error: inventoryError || new Error('Unable to load inventory usage.'),
+            };
+          }),
       ]);
       setOrders(ordersData);
       setAlerts(alertsData);
-      setViewedAt(new Date());
+      setPosBills(posBillsData);
+      if (inventoryCostResult.error) {
+        setInventoryCostError(
+          (inventoryCostResult.error && inventoryCostResult.error.message) ||
+            'Unable to load inventory usage.',
+        );
+      } else {
+        setInventoryUsageCost(inventoryCostResult.cost);
+        setInventoryCostError(
+          inventoryCostResult.movementLimitReached
+            ? 'Estimate · latest 500 movements only'
+            : null,
+        );
+      }
+      setViewedAt(now);
+      succeeded = true;
     } catch (e) {
       setError((e && e.message) || 'Failed to load dashboard data.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+    return succeeded;
   }, []);
 
   // Fetch when the screen gains focus (covers first open and return visits).
@@ -74,9 +137,7 @@ export default function DashboardScreen() {
     }, [load]),
   );
 
-  const onRefresh = useCallback(() => {
-    load(true);
-  }, [load]);
+  const onRefresh = useCallback(() => load(true), [load]);
 
   const hasData = Array.isArray(orders);
   const safeOrders = useMemo(
@@ -89,8 +150,12 @@ export default function DashboardScreen() {
     [safeOrders, viewedAt],
   );
   const trend = useMemo(
-    () => buildTodayTrend(safeOrders, viewedAt),
-    [safeOrders, viewedAt],
+    () => buildTodayTrend(safeOrders, viewedAt, posBills),
+    [safeOrders, posBills, viewedAt],
+  );
+  const posRevenue = useMemo(
+    () => computeTodayPosRevenue(posBills, viewedAt),
+    [posBills, viewedAt],
   );
   const popularItems = useMemo(
     () => computeTodayPopularItems(safeOrders, viewedAt, 5),
@@ -107,9 +172,9 @@ export default function DashboardScreen() {
     {
       key: 'revenue',
       label: "Today's Revenue",
-      value: formatCurrency(stats.totalRevenue),
+      value: formatCurrency(stats.totalRevenue + posRevenue),
       accent: COLORS.revenue,
-      hint: 'IST today · non-cancelled',
+      hint: 'IST today · orders + paid POS',
     },
     {
       key: 'orders',
@@ -132,6 +197,25 @@ export default function DashboardScreen() {
       accent: COLORS.completed,
       hint: 'COMPLETED (IST today)',
     },
+    {
+      key: 'inventory-cost',
+      label: "Today's Inventory Cost",
+      value:
+        inventoryCostError ||
+        (inventoryUsageCost.consumptionMovements > 0 &&
+          inventoryUsageCost.unpricedMovements ===
+            inventoryUsageCost.consumptionMovements)
+          ? '—'
+          : formatCurrency(inventoryUsageCost.totalCost),
+      accent: COLORS.accent,
+      hint: inventoryCostError
+        ? inventoryCostError
+        : inventoryUsageCost.consumptionMovements === 0
+          ? 'No consumption logged today'
+          : inventoryUsageCost.unpricedMovements > 0
+            ? `Estimate · ${inventoryUsageCost.unpricedMovements} movements lack a unit cost`
+            : 'Estimate · logged usage × unit cost',
+    },
   ];
 
   const initialLoading = loading && !hasData;
@@ -146,7 +230,7 @@ export default function DashboardScreen() {
       }>
       <Text style={styles.pageTitle}>Dashboard Overview</Text>
       <Text style={styles.pageSubtitle}>
-        Today&apos;s IST snapshot from /api/orders + /api/inventory/alerts
+        Today&apos;s IST snapshot from orders, paid POS bills, and inventory activity
       </Text>
 
       {error && hasData ? (
@@ -163,7 +247,7 @@ export default function DashboardScreen() {
       {initialLoading ? (
         <View>
           <View style={styles.statsGrid}>
-            {[0, 1, 2, 3].map(function (i) {
+            {[0, 1, 2, 3, 4].map(function (i) {
               return (
                 <SkeletonBlock
                   key={i}
@@ -209,6 +293,12 @@ export default function DashboardScreen() {
               );
             })}
           </View>
+
+          <View style={styles.spacer} />
+
+          <StaffCart onCheckoutComplete={onRefresh} />
+
+          <View style={styles.spacer} />
 
           <OrdersTrend data={trend} />
 

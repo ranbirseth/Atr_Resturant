@@ -1,34 +1,81 @@
 import { getBaseUrl } from './config';
 
+// TEMP DEBUG: proves which base URL the running JS bundle is actually using.
+console.log('[API] Base URL:', getBaseUrl());
+
+function preview(value, maxLength = 400) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  if (!text) {
+    return text;
+  }
+  return text.length > maxLength ? `${text.slice(0, maxLength)}... [truncated]` : text;
+}
+
 async function request(path, options = {}) {
   const url = `${getBaseUrl()}${path}`;
-  const response = await fetch(url, {
-    method: options.method || 'GET',
-    headers: {
-      Accept: 'application/json',
-      ...(options.body ? {'Content-Type': 'application/json'} : {}),
-      ...(options.headers || {}),
-    },
+  const method = options.method || 'GET';
+  const headers = {
+    Accept: 'application/json',
+    ...(options.body ? {'Content-Type': 'application/json'} : {}),
+    ...(options.headers || {}),
+  };
+
+  // TEMP DEBUG: request that is about to leave the app.
+  console.log('[API] --> REQUEST', {
+    method,
+    url,
+    headers,
     body: options.body,
   });
 
-  let data = null;
-  const text = await response.text();
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      data = text;
-    }
-  }
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: options.body,
+    });
 
-  if (!response.ok) {
-    const error = new Error(`HTTP ${response.status} for ${path}`);
-    error.status = response.status;
-    error.data = data;
+    let data = null;
+    const text = await response.text();
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        data = text;
+      }
+    }
+
+    // TEMP DEBUG: raw response received by the app.
+    console.log('[API] <-- RESPONSE', {
+      url,
+      status: response.status,
+      ok: response.ok,
+      contentType: response.headers.get('content-type'),
+      rawLength: text.length,
+      dataPreview: preview(data),
+      data: data,
+    });
+
+    if (!response.ok) {
+      const error = new Error(`HTTP ${response.status} for ${path}`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    // TEMP DEBUG: the exact failure (network, DNS, TLS, abort, HTTP, JSON...).
+    console.log('[API] !! REQUEST FAILED', {
+      method,
+      url,
+      name: error && error.name,
+      message: error && error.message,
+      status: error && error.status,
+      data: error && error.data,
+      stack: error && error.stack,
+    });
     throw error;
   }
-  return data;
 }
 
 export const api = {

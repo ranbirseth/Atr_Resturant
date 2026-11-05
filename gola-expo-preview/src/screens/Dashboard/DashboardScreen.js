@@ -25,6 +25,7 @@ import {
 } from '../../utils/dashboardMetrics';
 import {calculateConsumptionCost} from '../../utils/inventoryAnalyticsUtils';
 import StatCard from '../../components/dashboard/StatCard';
+import PosBillsToday from '../../components/dashboard/PosBillsToday';
 import StaffCart from '../../components/dashboard/StaffCart';
 import OrdersTrend from '../../components/dashboard/OrdersTrend';
 import PopularItems from '../../components/dashboard/PopularItems';
@@ -66,14 +67,14 @@ export default function DashboardScreen() {
     try {
       const now = new Date();
       const {start, end} = istDayBounds(now);
+      const billsFrom = istDateKey(new Date(start.getTime() - 29 * 24 * 60 * 60 * 1000));
       const [ordersData, alertsData, posBillsData, inventoryCostResult] = await Promise.all([
         getOrders(),
         getLowStockAlerts().catch(function () {
           return [];
         }),
         getBills({
-          origin: 'POS',
-          from: istDateKey(now),
+          from: billsFrom,
           to: istDateKey(now),
         }),
         Promise.all([
@@ -174,7 +175,7 @@ export default function DashboardScreen() {
       label: "Today's Revenue",
       value: formatCurrency(stats.totalRevenue + posRevenue),
       accent: COLORS.revenue,
-      hint: 'IST today · orders + paid POS',
+      hint: 'IST today · orders + collected POS payments',
     },
     {
       key: 'orders',
@@ -230,7 +231,7 @@ export default function DashboardScreen() {
       }>
       <Text style={styles.pageTitle}>Dashboard Overview</Text>
       <Text style={styles.pageSubtitle}>
-        Today&apos;s IST snapshot from orders, paid POS bills, and inventory activity
+        Today&apos;s IST snapshot from orders, POS bills, and inventory activity
       </Text>
 
       {error && hasData ? (
@@ -296,7 +297,14 @@ export default function DashboardScreen() {
 
           <View style={styles.spacer} />
 
-          <StaffCart onCheckoutComplete={onRefresh} />
+          <PosBillsToday bills={posBills} now={viewedAt} />
+
+          <View style={styles.spacer} />
+
+          <StaffCart
+            onCheckoutComplete={onRefresh}
+            refreshKey={viewedAt ? viewedAt.getTime() : null}
+          />
 
           <View style={styles.spacer} />
 

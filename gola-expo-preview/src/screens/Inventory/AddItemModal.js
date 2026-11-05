@@ -23,7 +23,7 @@ function Field({ label, value, onChangeText, error, ...rest }) {
 // Minimal purchase entry: name, unit, total quantity, total price.
 // The admin never types a per-unit cost — it is derived from total / quantity.
 export default function AddItemModal({ units, saving, serverError, onClose, onSubmit }) {
-  const [form, setForm] = useState({ name: '', unit: 'kg', quantity: '', totalPrice: '' });
+  const [form, setForm] = useState({ name: '', unit: 'kg', quantity: '', totalPrice: '', imageUrl: '' });
   const [errors, setErrors] = useState({});
 
   const unitOptions = (Array.isArray(units) ? units : []).map(function (entry) {
@@ -53,6 +53,7 @@ export default function AddItemModal({ units, saving, serverError, onClose, onSu
       openingQty: Number(form.quantity),
       openingUnitCost: computeUnitCost(form.totalPrice, form.quantity),
       minimumStockLevel: 0,
+      imageUrl: form.imageUrl.trim(),
     });
   }
 
@@ -120,6 +121,17 @@ export default function AddItemModal({ units, saving, serverError, onClose, onSu
           Per-unit cost: {formatPrice(unitCost)}/{form.unit}
         </Text>
       ) : null}
+
+      <Field
+        label="Live Image Link"
+        value={form.imageUrl}
+        onChangeText={(text) => setField('imageUrl', text)}
+        error={errors.imageUrl}
+        keyboardType="url"
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholder="https://example.com/item.jpg"
+      />
 
       {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
     </FormModal>

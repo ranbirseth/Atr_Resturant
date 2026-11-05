@@ -105,6 +105,22 @@ test('validateIngredientInput partial allows single-field update', () => {
     assert.deepEqual(result.value, { minimumStockLevel: 8 });
 });
 
+test('validateIngredientInput accepts an optional http(s) image URL', () => {
+    const good = validateIngredientInput(
+        { name: 'Flour', unit: 'kg', minimumStockLevel: 1, imageUrl: ' https://cdn.example.com/flour.jpg ' },
+        { partial: false },
+    );
+    assert.deepEqual(good.errors, []);
+    assert.equal(good.value.imageUrl, 'https://cdn.example.com/flour.jpg');
+
+    const cleared = validateIngredientInput({ imageUrl: '' }, { partial: true });
+    assert.deepEqual(cleared.errors, []);
+    assert.equal(cleared.value.imageUrl, '');
+
+    const bad = validateIngredientInput({ imageUrl: 'not-a-url' }, { partial: true });
+    assert.equal(bad.errors.length, 1);
+});
+
 test('validateMovementInput enforces positive quantity for non-adjustments', () => {
     const bad = validateMovementInput({ ingredientId: 'abc', type: 'CONSUMPTION', quantity: 0 });
     assert.equal(bad.errors.length, 1);

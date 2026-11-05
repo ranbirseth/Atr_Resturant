@@ -18,6 +18,7 @@ const {
     detectMixedAudience,
     priceLinesForAudience,
     applyPreservedDiscount,
+    parseDiscountInput,
     computeRequestHash,
     canonicalizePosItems,
     canonicalizeSessionOrderIds,
@@ -81,6 +82,15 @@ const generateBill = async (req, res) => {
             }
         }
 
+        const discountResult = parseDiscountInput(req.body && req.body.discount);
+        if (!discountResult.ok) {
+            return res.status(400).json({ error: 'INVALID_DISCOUNT', message: discountResult.message });
+        }
+        if (discountResult.paise > 0 && requestedAudience !== 'STAFF') {
+            return res.status(400).json({ error: 'DISCOUNT_NOT_ALLOWED', message: 'discount is only allowed on STAFF bills' });
+        }
+        const requestedDiscountPaise = discountResult.paise;
+
         // Idempotency namespace per decision E: SESSION:<key>.
         let idempotencyKey = null;
         let requestHash = null;
@@ -94,6 +104,7 @@ const generateBill = async (req, res) => {
                 sessionId,
                 orderIds: requestedIds ? requestedIds.map((id) => String(id)) : null,
                 audience: requestedAudience,
+                discountPaise: requestedDiscountPaise,
             };
             requestHash = computeRequestHash('generateBill', payload);
         }
@@ -310,7 +321,10 @@ const generateBill = async (req, res) => {
             subtotalPaise = runningSubtotal;
             billLines = allLines;
             billOrders = pricedOrders;
-            totals = applyPreservedDiscount(subtotalPaise, effectiveAudience === 'CUSTOMER' ? preservedDiscount : 0);
+            totals = applyPreservedDiscount(
+                subtotalPaise,
+                effectiveAudience === 'CUSTOMER' ? preservedDiscount : requestedDiscountPaise,
+            );
             discountPaise = totals.discountPaise;
             couponCode = effectiveAudience === 'CUSTOMER' ? preservedCoupon : '';
         } else {
@@ -483,6 +497,14 @@ const createPosBill = async (req, res) => {
             return res.status(400).json({ error: 'INVALID_BODY', message: 'each itemId must be a valid ObjectId' });
         }
     }
+    const discountResult = parseDiscountInput(body.discount);
+    if (!discountResult.ok) {
+        return res.status(400).json({ error: 'INVALID_DISCOUNT', message: discountResult.message });
+    }
+    if (discountResult.paise > 0 && audience !== 'STAFF') {
+        return res.status(400).json({ error: 'DISCOUNT_NOT_ALLOWED', message: 'discount is only allowed on STAFF bills' });
+    }
+    const discountPaise = discountResult.paise;
     const idempotencyKey = body.idempotencyKey !== undefined && body.idempotencyKey !== null
         ? String(body.idempotencyKey).trim()
         : '';
@@ -496,6 +518,7 @@ const createPosBill = async (req, res) => {
             const requestHash = computeRequestHash('posBill', {
                 audience,
                 items: canonicalizePosItems(items),
+                discountPaise,
                 createdBy: body.createdBy || '',
             });
             if (cached.requestHash && requestHash && cached.requestHash !== requestHash) {
@@ -521,12 +544,13 @@ const createPosBill = async (req, res) => {
         if (!priceRes.ok) {
             return res.status(priceRes.status).json({ error: 'INVALID_ORDER_ITEMS', message: priceRes.message });
         }
-        const totals = applyPreservedDiscount(priceRes.subtotalPaise, 0);
+        const totals = applyPreservedDiscount(priceRes.subtotalPaise, discountPaise);
         const billId = new mongoose.Types.ObjectId();
         const billNumber = await Counter.nextBillNumber();
         const requestHash = computeRequestHash('posBill', {
             audience,
             items: canonicalizePosItems(items),
+            discountPaise,
             createdBy: body.createdBy || '',
         });
         try {
@@ -555,6 +579,7 @@ const createPosBill = async (req, res) => {
                     const hash = computeRequestHash('posBill', {
                         audience,
                         items: canonicalizePosItems(items),
+                        discountPaise,
                         createdBy: body.createdBy || '',
                     });
                     if (cached.requestHash && hash && cached.requestHash !== hash) {

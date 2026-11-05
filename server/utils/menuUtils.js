@@ -53,15 +53,10 @@ function isValidPrice(value) {
     return toFinitePrice(value) !== null;
 }
 
-// P1.1: the staff price is ALWAYS derived from the authoritative customer
-// price as 60% of it, rounded to two decimal places (half-paise rounds up via
-// Math.round). The legacy stored `staffPrice` field is never used for pricing.
+// Staff items use the same list price as customer items. Any staff discount is
+// entered per bill, so no fixed percentage is derived or stored on the item.
 function computeStaffPrice(price) {
-    const base = toFinitePrice(price);
-    if (base === null) {
-        return null;
-    }
-    return Math.round(base * 0.6 * 100) / 100;
+    return toFinitePrice(price);
 }
 
 // Accepts booleans and the "true"/"false" strings multipart forms produce.
@@ -243,9 +238,9 @@ function buildAuthoritativeOrder(options = {}) {
                 errors.push(`"${dbItem.name}" is currently unavailable`);
                 return;
             }
-            // P1.1: staff price is derived from the customer price (60%),
-            // never from a manually stored value.
-            unitPrice = computeStaffPrice(dbItem.price);
+            // Staff items use the current menu price; the staff discount is
+            // applied to the bill total, never to the menu item itself.
+            unitPrice = toFinitePrice(dbItem.price);
             if (unitPrice === null) {
                 errors.push(`Price is not configured for "${dbItem.name}"`);
                 return;

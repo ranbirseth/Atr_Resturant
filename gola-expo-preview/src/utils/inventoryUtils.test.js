@@ -8,6 +8,7 @@ const {
   formatQty,
   formatPrice,
   formatPercent,
+  isValidImageUrl,
   parseDateInput,
   validateAddItemForm,
   validateIngredientForm,
@@ -120,6 +121,37 @@ test('validateAddItemForm enforces the four simplified fields', () => {
   assert.equal(validateAddItemForm({ name: 'Oil', unit: 'litre', quantity: '-1', totalPrice: '10' }).valid, false);
   assert.equal(validateAddItemForm({ name: 'Oil', unit: 'litre', quantity: '10', totalPrice: '-5' }).valid, false);
   assert.equal(validateAddItemForm({ name: 'Oil', unit: 'litre', quantity: '2.5', totalPrice: '375' }).valid, true);
+});
+
+test('isValidImageUrl accepts http(s) URLs and rejects malformed values', () => {
+  assert.equal(isValidImageUrl('https://cdn.example.com/oil.jpg'), true);
+  assert.equal(isValidImageUrl(' http://example.com/image.png '), true);
+  assert.equal(isValidImageUrl(''), false);
+  assert.equal(isValidImageUrl('ftp://example.com/image.png'), false);
+  assert.equal(isValidImageUrl('not a url'), false);
+});
+
+test('validateAddItemForm validates the optional image URL', () => {
+  assert.equal(
+    validateAddItemForm({
+      name: 'Oil',
+      unit: 'litre',
+      quantity: '10',
+      totalPrice: '1500',
+      imageUrl: 'https://cdn.example.com/oil.jpg',
+    }).valid,
+    true,
+  );
+  assert.equal(
+    validateAddItemForm({
+      name: 'Oil',
+      unit: 'litre',
+      quantity: '10',
+      totalPrice: '1500',
+      imageUrl: 'bad-url',
+    }).valid,
+    false,
+  );
 });
 
 test('computeUnitCost converts a total price into a per-unit cost', () => {

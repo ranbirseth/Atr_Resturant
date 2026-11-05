@@ -29,13 +29,16 @@ export async function generateSessionBill(sessionId, options) {
   if (opts.idempotencyKey !== undefined && opts.idempotencyKey !== null && String(opts.idempotencyKey).trim() !== '') {
     body.idempotencyKey = opts.idempotencyKey;
   }
+  if (opts.discount !== undefined && opts.discount !== null && String(opts.discount).trim() !== '') {
+    body.discount = opts.discount;
+  }
   return api.post(`/billing/sessions/${encodeURIComponent(sessionId)}/bills`, body);
 }
 
 // Direct POS bill for the tablet counter (origin POS). The audience is required
 // and server-authoritative: the client only sends item ids + quantities, never
 // prices or totals. A fresh idempotencyKey per checkout is required.
-export async function createPosBill(audience, items, idempotencyKey) {
+export async function createPosBill(audience, items, idempotencyKey, discount) {
   if (audience !== 'CUSTOMER' && audience !== 'STAFF') {
     throw new Error('createPosBill requires an audience of CUSTOMER or STAFF');
   }
@@ -45,11 +48,15 @@ export async function createPosBill(audience, items, idempotencyKey) {
   if (!idempotencyKey || String(idempotencyKey).trim() === '') {
     throw new Error('createPosBill requires an idempotencyKey');
   }
-  return api.post('/billing/pos/bills', {
+  const body = {
     audience,
     items,
     idempotencyKey: String(idempotencyKey).trim(),
-  });
+  };
+  if (discount !== undefined && discount !== null && String(discount).trim() !== '') {
+    body.discount = discount;
+  }
+  return api.post('/billing/pos/bills', body);
 }
 
 export async function getBillById(billId) {
@@ -82,15 +89,23 @@ export async function recordPayment(billId, payload) {
   if (!payload || payload.amount == null) {
     throw new Error('recordPayment requires an amount');
   }
-  const body = { amount: payload.amount, method: payload.method };
+  const idempotencyKey =
+    payload.idempotencyKey !== undefined && payload.idempotencyKey !== null
+      ? String(payload.idempotencyKey).trim()
+      : '';
+  if (!idempotencyKey) {
+    throw new Error('recordPayment requires an idempotencyKey');
+  }
+  const body = {
+    amount: payload.amount,
+    method: payload.method,
+    idempotencyKey,
+  };
   if (payload.reference) {
     body.reference = payload.reference;
   }
   if (payload.note) {
     body.note = payload.note;
-  }
-  if (payload.idempotencyKey) {
-    body.idempotencyKey = payload.idempotencyKey;
   }
   return api.post(`/billing/bills/${encodeURIComponent(billId)}/payments`, body);
 }

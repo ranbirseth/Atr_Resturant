@@ -55,6 +55,7 @@ async function createItem(payload) {
         purchasePrice: payload.purchasePrice,
         openingUnitCost: payload.openingUnitCost,
         openingNote: payload.openingNote,
+        imageUrl: payload.imageUrl,
     });
     assert.equal(res.status, 201, JSON.stringify(res.data));
     return res.data;
@@ -104,6 +105,28 @@ test('POST /ingredients validates required fields, units and duplicates', async 
 
     const duplicate = await api('POST', '/ingredients', { name: '  basmati   RICE ', unit: 'kg', minimumStockLevel: 5 });
     assert.equal(duplicate.status, 400);
+});
+
+test('POST /ingredients stores an optional image URL and rejects invalid URLs', async () => {
+    const invalid = await api('POST', '/ingredients', {
+        name: 'Invalid Image Item',
+        unit: 'kg',
+        minimumStockLevel: 1,
+        imageUrl: 'not-a-url',
+    });
+    assert.equal(invalid.status, 400);
+
+    const item = await createItem({
+        name: 'Image Item',
+        unit: 'kg',
+        minimumStockLevel: 1,
+        imageUrl: 'https://cdn.example.com/image-item.jpg',
+    });
+    assert.equal(item.imageUrl, 'https://cdn.example.com/image-item.jpg');
+
+    const fetched = await api('GET', `/ingredients/${item._id}`);
+    assert.equal(fetched.status, 200);
+    assert.equal(fetched.data.imageUrl, 'https://cdn.example.com/image-item.jpg');
 });
 
 test('opening quantity seeds balance, an OPENING movement and an open cycle', async () => {

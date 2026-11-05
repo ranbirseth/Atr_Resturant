@@ -185,20 +185,128 @@ function computeTodayStats(orders, now) {
   return computeStats(filterOrdersForIstDay(orders, now));
 }
 
-// POS bills are separate from Orders and only contribute revenue after a
-// payment is recorded. Voided bills are excluded; amountPaid is net of reversals.
+function isPosBill(bill) {
+  return (
+    bill != null &&
+    typeof bill === 'object' &&
+    String(bill.origin || '').trim().toUpperCase() === 'POS'
+  );
+}
+
+function isRecognizedBill(bill) {
+  return (
+    bill != null &&
+    ['OPEN', 'SETTLED'].indexOf(String(bill.status || '').trim().toUpperCase()) !== -1
+  );
+}
+
+function selectTodayPosBills(bills, now) {
+  return filterOrdersForIstDay(bills, now).filter(isPosBill);
+}
+
+function selectTodayBills(bills, now) {
+  return filterOrdersForIstDay(bills, now);
+}
+
+function isCollectedPayment(payment, start, end) {
+  if (!payment || !payment.receivedAt) {
+    return false;
+  }
+  const status = String(payment.status || 'RECORDED').trim().toUpperCase();
+  const receivedAt = new Date(payment.receivedAt).getTime();
+  return (
+    status !== 'REVERSED' &&
+    !Number.isNaN(receivedAt) &&
+    receivedAt >= start &&
+    receivedAt < end
+  );
+}
+
+// POS bills are separate from Orders and only contribute revenue when a
+// payment is received during the current IST day. Voided bills and reversed
+// payments are excluded; SESSION bills remain represented by order revenue.
 function computeTodayPosRevenue(bills, now) {
-  const today = filterOrdersForIstDay(bills, now);
-  return today.reduce(function (total, bill) {
-    if (
-      !bill ||
-      String(bill.origin || '').trim().toUpperCase() !== 'POS' ||
-      ['OPEN', 'SETTLED'].indexOf(String(bill.status || '').trim().toUpperCase()) === -1
-    ) {
+  const bounds = istDayBounds(now);
+  const start = bounds.start.getTime();
+  const end = bounds.end.getTime();
+  const list = Array.isArray(bills) ? bills : [];
+  return list.reduce(function (total, bill) {
+    if (!isPosBill(bill)) {
       return total;
     }
-    return total + Math.max(0, toNumber(bill.amountPaid));
+    if (!isRecognizedBill(bill)) {
+      return total;
+    }
+    if (Array.isArray(bill.payments) && bill.payments.length > 0) {
+      return (
+        total +
+        bill.payments.reduce(function (billTotal, payment) {
+          return isCollectedPayment(payment, start, end)
+            ? billTotal + Math.max(0, toNumber(payment.amount))
+            : billTotal;
+        }, 0)
+      );
+    }
+    return filterOrdersForIstDay([bill], now).length > 0
+      ? total + Math.max(0, toNumber(bill.amountPaid))
+      : total;
   }, 0);
+}
+
+// Generated = recognized bill totals (OPEN + SETTLED), Collected = payments
+// received, Outstanding = unpaid balance. Voided bills are counted separately
+// and never contribute to money totals.
+function computeTodayPosBillSummary(bills, now) {
+  const today = selectTodayPosBills(bills, now);
+  return computeBillSummary(today);
+}
+
+function computeTodayBillSummary(bills, now) {
+  return computeBillSummary(selectTodayBills(bills, now));
+}
+
+function computeBillSummary(today) {
+  const summary = {
+    totalBills: today.length,
+    recognizedBills: 0,
+    voidedBills: 0,
+    generated: 0,
+    collected: 0,
+    outstanding: 0,
+  };
+
+  for (let i = 0; i < today.length; i++) {
+    const bill = today[i];
+    if (!isRecognizedBill(bill)) {
+      summary.voidedBills += 1;
+      continue;
+    }
+    const total = Math.max(0, toNumber(bill.totalAmount));
+    const paid = Math.max(0, toNumber(bill.amountPaid));
+    const due =
+      bill.balanceDue === undefined || bill.balanceDue === null
+        ? Math.max(0, total - paid)
+        : Math.max(0, toNumber(bill.balanceDue));
+
+    summary.recognizedBills += 1;
+    summary.generated += total;
+    summary.collected += paid;
+    summary.outstanding += due;
+  }
+
+  return summary;
+}
+
+function formatIstTime(value) {
+  if (!value) {
+    return '';
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const shifted = new Date(date.getTime() + IST_OFFSET_MS);
+  return pad2(shifted.getUTCHours()) + ':' + pad2(shifted.getUTCMinutes());
 }
 
 // Hourly order + revenue profile for the current IST day.
@@ -238,23 +346,35 @@ function buildTodayTrend(orders, now, posBills) {
       buckets[hour].revenue += toNumber(order.totalAmount);
     }
   }
-  const todayPosBills = filterOrdersForIstDay(posBills, now);
+  const todayPosBills = Array.isArray(posBills) ? posBills : [];
+  const bounds = istDayBounds(now);
+  const start = bounds.start.getTime();
+  const end = bounds.end.getTime();
   for (let i = 0; i < todayPosBills.length; i++) {
     const bill = todayPosBills[i];
     if (
       !bill ||
       String(bill.origin || '').trim().toUpperCase() !== 'POS' ||
-      ['OPEN', 'SETTLED'].indexOf(String(bill.status || '').trim().toUpperCase()) === -1 ||
-      !bill.createdAt
+      !isRecognizedBill(bill)
     ) {
       continue;
     }
-    const created = new Date(bill.createdAt);
-    if (Number.isNaN(created.getTime())) {
-      continue;
+    if (Array.isArray(bill.payments) && bill.payments.length > 0) {
+      bill.payments.forEach(function (payment) {
+        if (!isCollectedPayment(payment, start, end)) {
+          return;
+        }
+        const received = new Date(payment.receivedAt);
+        const shifted = new Date(received.getTime() + IST_OFFSET_MS);
+        buckets[shifted.getUTCHours()].revenue += Math.max(0, toNumber(payment.amount));
+      });
+    } else if (bill.createdAt && filterOrdersForIstDay([bill], now).length > 0) {
+      const created = new Date(bill.createdAt);
+      if (!Number.isNaN(created.getTime())) {
+        const shifted = new Date(created.getTime() + IST_OFFSET_MS);
+        buckets[shifted.getUTCHours()].revenue += Math.max(0, toNumber(bill.amountPaid));
+      }
     }
-    const shifted = new Date(created.getTime() + IST_OFFSET_MS);
-    buckets[shifted.getUTCHours()].revenue += Math.max(0, toNumber(bill.amountPaid));
   }
   return buckets;
 }
@@ -399,7 +519,14 @@ module.exports = {
   filterOrdersForIstDay: filterOrdersForIstDay,
   filterNonCancelledOrders: filterNonCancelledOrders,
   computeTodayStats: computeTodayStats,
+  isPosBill: isPosBill,
+  isRecognizedBill: isRecognizedBill,
+  selectTodayPosBills: selectTodayPosBills,
+  selectTodayBills: selectTodayBills,
   computeTodayPosRevenue: computeTodayPosRevenue,
+  computeTodayPosBillSummary: computeTodayPosBillSummary,
+  computeTodayBillSummary: computeTodayBillSummary,
+  formatIstTime: formatIstTime,
   buildTodayTrend: buildTodayTrend,
   populatedTrendHours: populatedTrendHours,
   computePopularItems: computePopularItems,

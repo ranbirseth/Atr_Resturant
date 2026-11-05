@@ -23,6 +23,12 @@ const ingredientSchema = new mongoose.Schema({
         required: true,
         enum: UNITS,
     },
+    imageUrl: {
+        type: String,
+        trim: true,
+        default: '',
+        maxlength: [2048, 'imageUrl must be 2048 characters or fewer'],
+    },
     minimumStockLevel: {
         type: Number,
         required: true,

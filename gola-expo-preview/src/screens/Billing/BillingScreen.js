@@ -35,12 +35,14 @@ import {
   isItemSellable,
   removeItem,
   cartTotals,
+  computePayable,
 } from '../../utils/billingUtils';
 import {
   buildPosPayload,
   cartForAudience,
   makeIdempotencyKey,
   normalizeAudience,
+  parseBillDiscount,
 } from '../../utils/audienceBilling';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 
@@ -87,6 +89,7 @@ export default function BillingScreen() {
   // Audience selection + per-checkout idempotency reference. Both reset on a new
   // checkout so a previous choice is never reused by accident.
   const [audience, setAudience] = useState(null);
+  const [staffDiscount, setStaffDiscount] = useState('');
   const [checkoutKey, setCheckoutKey] = useState(function () {
     return makeIdempotencyKey('pos');
   });
@@ -174,11 +177,17 @@ export default function BillingScreen() {
     [items, query, categoryFilter],
   );
 
-  // Preview only: reprice the cart for the selected audience so line prices and
-  // totals update live (STAFF shows 60% of the customer menu price). The server
-  // recomputes the authoritative amounts at bill-creation time.
+  // Preview only. Both audiences use menu prices; a STAFF bill may then apply
+  // the admin-entered discount. The server recomputes every amount.
   const displayCart = useMemo(() => cartForAudience(cart, audience), [cart, audience]);
   const totals = useMemo(() => cartTotals(displayCart), [displayCart]);
+  const discountResult = useMemo(() => parseBillDiscount(staffDiscount), [staffDiscount]);
+  const discountAmount =
+    normalizeAudience(audience) === 'STAFF' && discountResult.ok ? discountResult.amount : 0;
+  const payable = useMemo(
+    () => computePayable(totals.subtotal, discountAmount),
+    [totals.subtotal, discountAmount],
+  );
 
   const isWide = width >= WIDE_MIN_WIDTH;
   const menuColumns = width >= 1280 ? 3 : width >= 680 ? 2 : 1;
@@ -186,6 +195,7 @@ export default function BillingScreen() {
   function startNewCheckout() {
     setCart([]);
     setAudience(null);
+    setStaffDiscount('');
     setCheckoutKey(makeIdempotencyKey('pos'));
     setGenerateError(null);
     setCreatedBill(null);
@@ -221,7 +231,11 @@ export default function BillingScreen() {
   }
 
   function handleSelectAudience(value) {
-    setAudience(normalizeAudience(value));
+    const next = normalizeAudience(value);
+    setAudience(next);
+    if (next !== 'STAFF') {
+      setStaffDiscount('');
+    }
     setGenerateError(null);
   }
 
@@ -236,6 +250,7 @@ export default function BillingScreen() {
         onPress: function () {
           setCart(clearCart());
           setAudience(null);
+          setStaffDiscount('');
           setCheckoutKey(makeIdempotencyKey('pos'));
           setGenerateError(null);
         },
@@ -255,11 +270,20 @@ export default function BillingScreen() {
       setGenerateError('Select who this bill is for (Customer or Staff).');
       return;
     }
+    if (normalizeAudience(audience) === 'STAFF' && !discountResult.ok) {
+      setGenerateError(discountResult.message);
+      return;
+    }
     setCreating(true);
     setGenerateError(null);
     try {
-      const payload = buildPosPayload(audience, cart);
-      const bill = await createPosBill(payload.audience, payload.items, checkoutKey);
+      const payload = buildPosPayload(audience, cart, staffDiscount);
+      const bill = await createPosBill(
+        payload.audience,
+        payload.items,
+        checkoutKey,
+        payload.discount,
+      );
       setCartModalVisible(false);
       setCreatedBill(bill);
     } catch (createError) {
@@ -346,6 +370,13 @@ export default function BillingScreen() {
         totals={totals}
         audience={audience}
         onSelectAudience={handleSelectAudience}
+        staffDiscount={staffDiscount}
+        onChangeStaffDiscount={(value) => {
+          setStaffDiscount(value);
+          setGenerateError(null);
+        }}
+        discountError={!discountResult.ok ? discountResult.message : null}
+        payable={payable}
         onIncrement={handleIncrement}
         onDecrement={handleDecrement}
         onRemove={handleRemove}
@@ -441,7 +472,7 @@ export default function BillingScreen() {
             <Text style={styles.bottomCount}>
               {totals.unitCount} item{totals.unitCount === 1 ? '' : 's'}
             </Text>
-            <Text style={styles.bottomTotal}>{formatPrice(totals.subtotal)}</Text>
+            <Text style={styles.bottomTotal}>{formatPrice(payable)}</Text>
           </View>
           <Pressable
             style={styles.bottomButton}

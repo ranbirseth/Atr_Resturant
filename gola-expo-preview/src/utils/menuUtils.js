@@ -29,18 +29,10 @@ function isValidPrice(value) {
   return toFinitePrice(value) !== null;
 }
 
-// P1.2: the staff price is DERIVED from the authoritative customer price as 60%
-// of it, rounded to two decimal places (half-paise rounds up via Math.round).
-// This mirrors the backend source of truth exactly:
-// server/utils/menuUtils.js `computeStaffPrice` (Math.round(price * 0.6 * 100) / 100).
-// The legacy stored `item.staffPrice` is NEVER used. The backend remains
-// authoritative for all written/ordered prices; this is a display preview only.
+// Staff items use the same list price as customer items. Staff discounts are
+// entered per bill and are not derived from a fixed percentage.
 function computeStaffPrice(price) {
-  const base = toFinitePrice(price);
-  if (base === null) {
-    return null;
-  }
-  return Math.round(base * 0.6 * 100) / 100;
+  return toFinitePrice(price);
 }
 
 function normalizeCategoryName(name) {
@@ -98,14 +90,13 @@ function itemImageUrl(item, apiBaseUrl) {
   return null;
 }
 
-// Price shown for a given audience ('CUSTOMER' | 'STAFF'). CUSTOMER uses the
-// editable customer price; STAFF is always derived (60%, 2dp) and ignores any
-// legacy stored `item.staffPrice`.
+// Price shown for a given audience ('CUSTOMER' | 'STAFF'). Both audiences use
+// the menu list price; staff discounts belong to the bill, not the item.
 function audiencePrice(item, audience) {
   if (!item) {
     return null;
   }
-  return audience === 'STAFF' ? computeStaffPrice(item.price) : toFinitePrice(item.price);
+  return toFinitePrice(item.price);
 }
 
 // Search + category + veg filters for the item list.

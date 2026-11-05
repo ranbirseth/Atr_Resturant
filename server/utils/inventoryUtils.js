@@ -26,6 +26,7 @@ const INGREDIENT_WRITABLE_FIELDS = [
     'expectedDemand',
     'purchasePrice',
     'isActive',
+    'imageUrl',
 ];
 
 // Coerce numbers (including numeric strings from forms) to a finite number.
@@ -91,6 +92,14 @@ function normalizeUnit(unit) {
 
 function isValidUnit(unit) {
     return UNITS.includes(normalizeUnit(unit));
+}
+
+function isValidImageUrl(imageUrl) {
+    if (typeof imageUrl !== 'string') {
+        return false;
+    }
+    const text = imageUrl.trim();
+    return text.length > 0 && text.length <= 2048 && /^https?:\/\/[^\s]+$/i.test(text);
 }
 
 function isValidMovementType(type) {
@@ -213,6 +222,17 @@ function validateIngredientInput(body, options = {}) {
         const active = toBoolean(src.isActive);
         if (active === undefined) errors.push('isActive must be a boolean');
         else value.isActive = active;
+    }
+
+    if (src.imageUrl !== undefined) {
+        const imageUrl = src.imageUrl === null ? '' : String(src.imageUrl).trim();
+        if (imageUrl === '') {
+            value.imageUrl = '';
+        } else if (!isValidImageUrl(imageUrl)) {
+            errors.push('Image URL must be a valid http:// or https:// URL');
+        } else {
+            value.imageUrl = imageUrl;
+        }
     }
 
     // Opening quantity is only honoured on create (handled by the controller).
@@ -366,6 +386,7 @@ module.exports = {
     nameKey,
     normalizeUnit,
     isValidUnit,
+    isValidImageUrl,
     isValidMovementType,
     isValidPurchaseStatus,
     round2,

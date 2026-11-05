@@ -9,9 +9,10 @@
 // The audience is ALWAYS chosen explicitly before a bill is created; nothing
 // here defaults a new checkout to CUSTOMER. Client-side prices are a display
 // PREVIEW only - the server recomputes every amount authoritatively from the
-// database (CUSTOMER = current menu price, STAFF = 60% of the customer price).
+// database. Both audiences use the menu price; staff discounts are entered per
+// bill and applied after the subtotal.
 
-const { computeStaffPrice, toFinitePrice } = require('./menuUtils');
+const { toFinitePrice } = require('./menuUtils');
 
 const AUDIENCES = ['CUSTOMER', 'STAFF'];
 
@@ -36,28 +37,33 @@ function audienceLabel(value) {
   return null;
 }
 
-// Preview unit price for the chosen audience. STAFF derives 60% of the customer
-// price (mirrors the backend); CUSTOMER (or no selection) uses the customer
-// price. Returns null for a malformed price so callers can skip the line.
+// Preview unit price for the chosen audience. Both audiences use the menu
+// list price; any staff discount is applied to the bill total. Returns null for
+// a malformed price so callers can skip the line.
 function audienceUnitPrice(price, audience) {
-  const base = toFinitePrice(price);
-  if (base === null) {
-    return null;
-  }
-  return normalizeAudience(audience) === 'STAFF' ? computeStaffPrice(base) : base;
+  return toFinitePrice(price);
 }
 
-// Returns a new cart whose line prices are re-expressed for the audience, so
-// preview totals (subtotal/payable and per-line totals) update live when the
-// selection changes. The source cart keeps customer prices; only the display
-// copy is repriced. A null audience leaves the customer prices untouched.
+// Returns a display copy of the cart. The line prices are unchanged because
+// staff discounts apply to the bill, not to individual menu items.
 function cartForAudience(cart, audience) {
   const list = Array.isArray(cart) ? cart : [];
-  const normalized = normalizeAudience(audience);
   return list.map(function (line) {
-    const priced = audienceUnitPrice(line && line.price, normalized);
+    const priced = audienceUnitPrice(line && line.price, audience);
     return Object.assign({}, line, { price: priced === null ? (line && line.price) : priced });
   });
+}
+
+// Parse the optional admin-entered staff discount (rupees). Blank means zero.
+function parseBillDiscount(value) {
+  if (value === undefined || value === null || String(value).trim() === '') {
+    return { ok: true, amount: 0 };
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return { ok: false, amount: 0, message: 'Enter a discount of 0 or more.' };
+  }
+  return { ok: true, amount: Math.round(parsed * 100) / 100 };
 }
 
 function toLineQuantity(value) {
@@ -73,7 +79,7 @@ function toLineQuantity(value) {
 // sent - the server is authoritative for all prices and totals. Returns null
 // when no audience is selected or the cart has no usable line, which keeps the
 // Create button disabled rather than silently defaulting to Customer.
-function buildPosPayload(audience, cart) {
+function buildPosPayload(audience, cart, discount) {
   const normalized = normalizeAudience(audience);
   if (normalized === null) {
     return null;
@@ -90,7 +96,12 @@ function buildPosPayload(audience, cart) {
   if (items.length === 0) {
     return null;
   }
-  return { audience: normalized, items: items };
+  const payload = { audience: normalized, items: items };
+  const parsedDiscount = parseBillDiscount(discount);
+  if (normalized === 'STAFF' && parsedDiscount.ok && parsedDiscount.amount > 0) {
+    payload.discount = parsedDiscount.amount;
+  }
+  return payload;
 }
 
 function canCreatePosBill(cart, audience) {
@@ -100,12 +111,17 @@ function canCreatePosBill(cart, audience) {
 // Session bill payload for POST /api/billing/sessions/:id/bills. The server
 // rejects mixed-audience sessions and enforces that the requested audience
 // matches the captured orders' audience.
-function buildSessionPayload(audience) {
+function buildSessionPayload(audience, discount) {
   const normalized = normalizeAudience(audience);
   if (normalized === null) {
     return null;
   }
-  return { audience: normalized };
+  const payload = { audience: normalized };
+  const parsedDiscount = parseBillDiscount(discount);
+  if (normalized === 'STAFF' && parsedDiscount.ok && parsedDiscount.amount > 0) {
+    payload.discount = parsedDiscount.amount;
+  }
+  return payload;
 }
 
 // Fresh per-checkout reference. A new checkout always gets a new key (and a
@@ -131,6 +147,7 @@ module.exports = {
   audienceLabel: audienceLabel,
   audienceUnitPrice: audienceUnitPrice,
   cartForAudience: cartForAudience,
+  parseBillDiscount: parseBillDiscount,
   buildPosPayload: buildPosPayload,
   canCreatePosBill: canCreatePosBill,
   buildSessionPayload: buildSessionPayload,

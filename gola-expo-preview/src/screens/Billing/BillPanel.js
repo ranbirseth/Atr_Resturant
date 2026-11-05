@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -18,7 +19,7 @@ import { AUDIENCES, audienceLabel, normalizeAudience } from '../../utils/audienc
 
 const AUDIENCE_BLURB = {
   CUSTOMER: 'Current menu price.',
-  STAFF: '60% of the customer menu price.',
+  STAFF: 'Current menu price, then enter a bill discount.',
 };
 
 // Bill/cart panel for the POS screen. Pure presentation: all state lives in the
@@ -34,6 +35,10 @@ export default function BillPanel({
   totals,
   audience,
   onSelectAudience,
+  staffDiscount,
+  onChangeStaffDiscount,
+  discountError,
+  payable,
   onIncrement,
   onDecrement,
   onRemove,
@@ -87,6 +92,26 @@ export default function BillPanel({
             ? audienceLabel(selected) + ' pricing \u00b7 ' + AUDIENCE_BLURB[selected]
             : 'Select Customer or Staff before creating the bill.'}
         </Text>
+
+        {selected === 'STAFF' ? (
+          <View style={styles.discountBox}>
+            <Text style={styles.discountLabel}>Staff discount (₹)</Text>
+            <TextInput
+              style={styles.discountInput}
+              value={staffDiscount}
+              onChangeText={onChangeStaffDiscount}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor={COLORS.muted}
+              editable={!creating}
+              accessibilityLabel="Staff discount amount in rupees"
+            />
+            <Text style={styles.discountHint}>
+              Enter the discount for this bill only. Leave blank for none.
+            </Text>
+            {discountError ? <Text style={styles.discountError}>{discountError}</Text> : null}
+          </View>
+        ) : null}
       </View>
 
       {cart.length === 0 ? (
@@ -151,9 +176,17 @@ export default function BillPanel({
           </Text>
           <Text style={styles.totalValue}>{formatCurrency(totals.subtotal)}</Text>
         </View>
+        {selected === 'STAFF' && payable < totals.subtotal ? (
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Staff discount</Text>
+            <Text style={styles.discountValue}>
+              {'\u2212'} {formatCurrency(totals.subtotal - payable)}
+            </Text>
+          </View>
+        ) : null}
         <View style={[styles.totalRow, styles.grandRow]}>
           <Text style={styles.grandLabel}>Final Payable</Text>
-          <Text style={styles.grandValue}>{formatCurrency(totals.subtotal)}</Text>
+          <Text style={styles.grandValue}>{formatCurrency(payable)}</Text>
         </View>
         <Text style={styles.taxNote}>
           No tax, service charge, or surcharge is added. Prices are calculated by the
@@ -261,6 +294,40 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     fontSize: 12,
     color: COLORS.muted,
+  },
+  discountBox: {
+    marginTop: SPACING.md,
+  },
+  discountLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  discountInput: {
+    marginTop: SPACING.xs,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    fontSize: 15,
+    color: COLORS.text,
+    backgroundColor: COLORS.background,
+  },
+  discountHint: {
+    marginTop: SPACING.xs,
+    fontSize: 12,
+    color: COLORS.muted,
+  },
+  discountError: {
+    marginTop: SPACING.xs,
+    fontSize: 12,
+    color: COLORS.danger,
+  },
+  discountValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.danger,
   },
   emptyCart: {
     flex: 1,

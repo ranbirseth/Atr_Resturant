@@ -352,6 +352,19 @@ function applyPreservedDiscount(subtotalPaise, preservedDiscountPaise) {
     return { subtotalPaise: subtotal, discountPaise: discountPaise, totalPaise: subtotal - discountPaise };
 }
 
+// Parse the optional admin-entered staff discount (rupees) into integer paise.
+// Blank means zero. Negative/non-numeric values are rejected.
+function parseDiscountInput(value) {
+    if (value === undefined || value === null || String(value).trim() === '') {
+        return { ok: true, paise: 0 };
+    }
+    const paise = rupeesToPaisa(value);
+    if (paise === null || paise < 0) {
+        return { ok: false, paise: 0, message: 'discount must be a number 0 or greater' };
+    }
+    return { ok: true, paise: paise };
+}
+
 // Deterministic JSON so identical payloads always hash identically regardless
 // of key insertion order.
 function stableStringify(value) {
@@ -604,6 +617,7 @@ module.exports = {
     detectMixedAudience,
     priceLinesForAudience,
     applyPreservedDiscount,
+    parseDiscountInput,
     stableStringify,
     computeRequestHash,
     canonicalizePosItems,

@@ -43,6 +43,14 @@ function toPositiveNumber(value) {
   return parsed;
 }
 
+function isValidImageUrl(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const text = value.trim();
+  return text.length > 0 && text.length <= 2048 && /^https?:\/\/[^\s]+$/i.test(text);
+}
+
 function formatQty(value, unit) {
   const parsed = toFiniteNumber(value);
   const text = parsed === null ? '\u2014' : String(Math.round(parsed * 100) / 100);
@@ -118,6 +126,14 @@ function validateIngredientForm(form) {
       errors.openingUnitCost = 'Enter 0 or more';
     }
   }
+  if (
+    values.imageUrl !== undefined &&
+    values.imageUrl !== null &&
+    String(values.imageUrl).trim() !== '' &&
+    !isValidImageUrl(values.imageUrl)
+  ) {
+    errors.imageUrl = 'Use a valid http:// or https:// URL';
+  }
 
   return { valid: Object.keys(errors).length === 0, errors };
 }
@@ -138,6 +154,14 @@ function validateAddItemForm(form) {
   }
   if (toNonNegativeNumber(values.totalPrice) === null) {
     errors.totalPrice = 'Enter 0 or more';
+  }
+  if (
+    values.imageUrl !== undefined &&
+    values.imageUrl !== null &&
+    String(values.imageUrl).trim() !== '' &&
+    !isValidImageUrl(values.imageUrl)
+  ) {
+    errors.imageUrl = 'Use a valid http:// or https:// URL';
   }
 
   return { valid: Object.keys(errors).length === 0, errors };
@@ -272,6 +296,7 @@ module.exports = {
   toFiniteNumber,
   toNonNegativeNumber,
   toPositiveNumber,
+  isValidImageUrl,
   formatQty,
   formatPrice,
   formatPercent,

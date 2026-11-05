@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { PRINTER_ENABLED } from '../../config/features';
 import thermalPrinterService from '../../services/thermalPrinterService';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import { useBottomInset } from '../../hooks/useBottomInset';
@@ -26,6 +27,7 @@ import {
   canReversePayment,
   canVoidBill,
   countBillableOrders,
+  isBillableStatus,
   formatCurrency,
   paymentMethodLabel,
   paymentStatusLabel,
@@ -42,7 +44,6 @@ import {
   voidBill as voidBillApi,
 } from '../../api/billService';
 import {
-  AUDIENCES,
   audienceLabel,
   makeIdempotencyKey,
   normalizeAudience,
@@ -111,15 +112,29 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
   const [reversingId, setReversingId] = useState(null);
   const [amountText, setAmountText] = useState('');
   const [method, setMethod] = useState(PAYMENT_METHODS[0]);
-  // Audience is mandatory for a new session bill; the modal is remounted per
-  // session (key in OrdersScreen) so the choice never leaks between sessions.
-  const [audience, setAudience] = useState(null);
   // One idempotency reference per session lifetime (the modal remounts per
   // session), preserving the server's same-key/same-payload contract.
   const [sessionKey] = useState(function () {
     return makeIdempotencyKey('sess');
   });
   const paymentAttemptRef = useRef(null);
+  const sessionOrders = session && session.orders;
+  const billableOrders = useMemo(
+    () =>
+      Array.isArray(sessionOrders)
+        ? sessionOrders.filter((order) => order && isBillableStatus(order.status))
+        : [],
+    [sessionOrders],
+  );
+  const selectedAudience = useMemo(() => {
+    const audiences = new Set(
+      billableOrders.map((order) => normalizeAudience(order.audience) || 'CUSTOMER'),
+    );
+    if (audiences.size > 1) {
+      return 'MIXED';
+    }
+    return audiences.size === 1 ? Array.from(audiences)[0] : null;
+  }, [billableOrders]);
 
   const handleBillChange = useCallback(
     function (next) {
@@ -172,16 +187,19 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
       if (!sessionId || generating) {
         return;
       }
-      const selected = normalizeAudience(audience);
-      if (selected === null) {
-        setError('Select who this bill is for (Customer or Staff).');
+      if (selectedAudience === 'MIXED') {
+        setError('This session contains orders for both audiences and cannot be billed together.');
+        return;
+      }
+      if (selectedAudience === null) {
+        setError('No eligible orders are available to bill.');
         return;
       }
       setGenerating(true);
       setError(null);
       try {
         const next = await generateSessionBill(sessionId, {
-          audience: selected,
+          audience: selectedAudience,
           idempotencyKey: sessionKey,
         });
         handleBillChange(next);
@@ -196,7 +214,7 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
         setGenerating(false);
       }
     },
-    [sessionId, generating, audience, sessionKey, handleBillChange],
+    [sessionId, generating, selectedAudience, sessionKey, handleBillChange],
   );
 
   const handlePay = useCallback(
@@ -227,11 +245,13 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
             };
       paymentAttemptRef.current = paymentAttempt;
       try {
-        const response = await recordPaymentApi(bill._id, {
+        const paymentPayload = {
           amount: check.amount,
           method,
           idempotencyKey: paymentAttempt.idempotencyKey,
-        });
+        };
+        console.log('BillModal payment payload:', paymentPayload);
+        const response = await recordPaymentApi(bill._id, paymentPayload);
         paymentAttemptRef.current = null;
         const next = response && response.bill ? response.bill : response;
         handleBillChange(next);
@@ -330,7 +350,7 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
   );
 
   async function handlePrint() {
-    if (!bill || printing) {
+    if (!PRINTER_ENABLED || !bill || printing) {
       return;
     }
     setPrinting(true);
@@ -354,7 +374,6 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
   }
 
   const billableCount = countBillableOrders(session && session.orders);
-  const selectedAudience = normalizeAudience(audience);
   const billStyle = bill && billStatusStyle(bill.status);
   const payStyle = bill && paymentStatusStyle(bill.paymentStatus, bill);
   const payments = bill && Array.isArray(bill.payments) ? bill.payments : [];
@@ -406,40 +425,27 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
                     blocks cancel/change and tracks payments.
                   </Text>
 
-                  <Text style={styles.audienceLabel}>Who is this bill for?</Text>
-                  <View style={styles.methodRow}>
-                    {AUDIENCES.map(function (value) {
-                      const active = selectedAudience === value;
-                      return (
-                        <Pressable
-                          key={value}
-                          style={[styles.methodChip, active && styles.methodChipActive]}
-                          onPress={() => {
-                            setAudience(value);
-                            setError(null);
-                          }}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: active }}
-                          accessibilityLabel={'Bill for ' + audienceLabel(value)}>
-                          <Text
-                            style={[styles.methodChipText, active && styles.methodChipTextActive]}>
-                            {audienceLabel(value)}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
                   <Text style={styles.mutedText}>
-                    {selectedAudience
-                      ? audienceLabel(selectedAudience) + ' pricing is applied by the server.'
-                      : 'Select Customer or Staff to enable bill creation.'}
+                    {selectedAudience === 'MIXED'
+                      ? 'This session contains both Customer and Staff orders.'
+                      : selectedAudience
+                        ? audienceLabel(selectedAudience) + ' audience detected from the session orders.'
+                        : 'No eligible orders are available to bill.'}
                   </Text>
                 </View>
                 <Pressable
-                  disabled={generating || billableCount === 0 || selectedAudience === null}
+                  disabled={
+                    generating ||
+                    billableCount === 0 ||
+                    selectedAudience === null ||
+                    selectedAudience === 'MIXED'
+                  }
                   style={[
                     styles.primaryBtn,
-                    (generating || billableCount === 0 || selectedAudience === null) &&
+                    (generating ||
+                      billableCount === 0 ||
+                      selectedAudience === null ||
+                      selectedAudience === 'MIXED') &&
                       styles.btnDisabled,
                   ]}
                   onPress={handleGenerate}>
@@ -448,8 +454,10 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
                       ? 'Generating...'
                       : billableCount === 0
                         ? 'No orders to bill'
-                        : selectedAudience === null
-                          ? 'Select Customer or Staff'
+                        : selectedAudience === 'MIXED'
+                          ? 'Mixed audiences · cannot bill together'
+                          : selectedAudience === null
+                            ? 'No eligible audience detected'
                           : 'Generate Bill'}
                   </Text>
                 </Pressable>
@@ -496,13 +504,15 @@ export default function BillModal({ visible, session, onClose, onChangeBill }) {
                   </View>
                 </View>
 
-                <Pressable
-                  disabled={printing}
-                  style={[styles.printBtn, printing && styles.btnDisabled]}
-                  onPress={handlePrint}
-                  accessibilityRole="button">
-                  <Text style={styles.printText}>{printing ? 'Printing...' : 'Print Bill'}</Text>
-                </Pressable>
+                {PRINTER_ENABLED ? (
+                  <Pressable
+                    disabled={printing}
+                    style={[styles.printBtn, printing && styles.btnDisabled]}
+                    onPress={handlePrint}
+                    accessibilityRole="button">
+                    <Text style={styles.printText}>{printing ? 'Printing...' : 'Print Bill'}</Text>
+                  </Pressable>
+                ) : null}
 
                 {payments.length > 0 ? (
                   <View style={styles.card}>

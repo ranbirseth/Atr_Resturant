@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 
+import { PRINTER_DISABLED_MESSAGE, PRINTER_ENABLED } from '../config/features';
 import thermalPrinterService from '../services/thermalPrinterService';
 import { COLORS, RADIUS, SPACING } from '../theme';
 
@@ -21,6 +22,9 @@ export default function PrinterSettingsPanel() {
   const [printingTest, setPrintingTest] = useState(false);
 
   useEffect(() => {
+    if (!PRINTER_ENABLED) {
+      return;
+    }
     thermalPrinterService
       .getSavedPrinterAddress()
       .then(setSelectedAddress)
@@ -92,6 +96,15 @@ export default function PrinterSettingsPanel() {
       setPrintingTest(false);
     }
   };
+
+  if (!PRINTER_ENABLED) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.title}>Thermal Printer</Text>
+        <Text style={styles.subtitle}>{PRINTER_DISABLED_MESSAGE}</Text>
+      </View>
+    );
+  }
 
   const selectedPrinter = printers.find((printer) => printer.id === selectedAddress);
 

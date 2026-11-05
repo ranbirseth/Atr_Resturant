@@ -15,6 +15,11 @@ const {
   filterOrdersForIstDay,
   computeTodayStats,
   computeTodayPosRevenue,
+  computeTodayPosBillSummary,
+  computeTodayBillSummary,
+  formatIstTime,
+  selectTodayPosBills,
+  selectTodayBills,
   buildTodayTrend,
   populatedTrendHours,
   computePopularItems,
@@ -217,6 +222,117 @@ test('computeTodayPosRevenue includes only paid, non-void POS bills from the IST
   assert.equal(computeTodayPosRevenue(bills, now), 200);
 });
 
+test('computeTodayPosRevenue counts payments received today on older POS bills once', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const bills = [
+    {
+      origin: 'POS',
+      status: 'SETTLED',
+      amountPaid: 300,
+      createdAt: '2026-10-01T10:00:00.000Z',
+      payments: [
+        { amount: 125, status: 'RECORDED', receivedAt: '2026-10-10T19:00:00.000Z' },
+        { amount: 75, status: 'REVERSED', receivedAt: '2026-10-10T20:00:00.000Z' },
+      ],
+    },
+    {
+      origin: 'SESSION',
+      status: 'SETTLED',
+      amountPaid: 900,
+      createdAt: '2026-10-01T10:00:00.000Z',
+      payments: [
+        { amount: 900, status: 'RECORDED', receivedAt: '2026-10-10T19:00:00.000Z' },
+      ],
+    },
+  ];
+
+  assert.equal(computeTodayPosRevenue(bills, now), 125);
+});
+
+test('computeTodayPosBillSummary separates generated, collected and outstanding', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const bills = [
+    {
+      origin: 'POS',
+      status: 'OPEN',
+      totalAmount: 300,
+      amountPaid: 0,
+      balanceDue: 300,
+      createdAt: '2026-10-10T19:00:00.000Z',
+    },
+    {
+      origin: 'POS',
+      status: 'OPEN',
+      totalAmount: 200,
+      amountPaid: 50,
+      balanceDue: 150,
+      createdAt: '2026-10-10T20:00:00.000Z',
+    },
+    {
+      origin: 'POS',
+      status: 'SETTLED',
+      totalAmount: 100,
+      amountPaid: 100,
+      balanceDue: 0,
+      createdAt: '2026-10-10T21:00:00.000Z',
+    },
+    {
+      origin: 'POS',
+      status: 'VOID',
+      totalAmount: 900,
+      amountPaid: 0,
+      balanceDue: 0,
+      createdAt: '2026-10-10T22:00:00.000Z',
+    },
+    {
+      origin: 'POS',
+      status: 'OPEN',
+      totalAmount: 999,
+      amountPaid: 0,
+      balanceDue: 999,
+      createdAt: '2026-10-10T18:29:00.000Z',
+    },
+  ];
+
+  assert.deepEqual(computeTodayPosBillSummary(bills, now), {
+    totalBills: 4,
+    recognizedBills: 3,
+    voidedBills: 1,
+    generated: 600,
+    collected: 150,
+    outstanding: 450,
+  });
+});
+
+test('selectTodayPosBills keeps only POS bills from the current IST day', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const bills = [
+    { origin: 'POS', status: 'OPEN', createdAt: '2026-10-10T19:00:00.000Z' },
+    { origin: 'SESSION', status: 'OPEN', createdAt: '2026-10-10T19:00:00.000Z' },
+    { origin: 'POS', status: 'OPEN', createdAt: '2026-10-10T18:29:00.000Z' },
+  ];
+
+  assert.equal(selectTodayPosBills(bills, now).length, 1);
+});
+
+test('today bill list includes POS and SESSION bills', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const bills = [
+    { origin: 'POS', status: 'OPEN', createdAt: '2026-10-10T19:00:00.000Z' },
+    { origin: 'SESSION', status: 'OPEN', createdAt: '2026-10-10T19:00:00.000Z' },
+    { origin: 'POS', status: 'OPEN', createdAt: '2026-10-10T18:29:00.000Z' },
+  ];
+
+  assert.equal(selectTodayBills(bills, now).length, 2);
+  assert.equal(computeTodayBillSummary(bills, now).totalBills, 2);
+});
+
+test('formatIstTime renders IST wall-clock time and tolerates bad input', () => {
+  assert.equal(formatIstTime('2026-10-10T19:05:00.000Z'), '00:35');
+  assert.equal(formatIstTime('bad'), '');
+  assert.equal(formatIstTime(null), '');
+});
+
 test('buildTodayTrend returns 24 hourly buckets, grouping by IST hour', () => {
   const now = new Date('2026-10-11T03:30:00.000Z'); // 09:00 IST on 2026-10-11
   const orders = [
@@ -249,6 +365,25 @@ test('buildTodayTrend includes paid POS bill revenue without counting it as an o
 
   assert.equal(trend[0].count, 1);
   assert.equal(trend[0].revenue, 160);
+});
+
+test('buildTodayTrend places an older POS bill payment in the receipt hour', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const bills = [
+    {
+      origin: 'POS',
+      status: 'SETTLED',
+      amountPaid: 90,
+      createdAt: '2026-10-01T10:00:00.000Z',
+      payments: [
+        { amount: 90, status: 'RECORDED', receivedAt: '2026-10-10T19:00:00.000Z' },
+      ],
+    },
+  ];
+  const trend = buildTodayTrend([], now, bills);
+
+  assert.equal(trend[0].revenue, 90);
+  assert.equal(trend[10].revenue, 0);
 });
 
 test('buildTodayTrend handles empty orders and bad dates', () => {

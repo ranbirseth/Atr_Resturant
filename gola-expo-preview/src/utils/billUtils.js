@@ -88,7 +88,7 @@ const ERROR_CODES = {
   // Audience-aware billing (P1.3 / Phase 2E): selecting Customer or Staff.
   AUDIENCE_REQUIRED: 'Select who this bill is for (Customer or Staff).',
   INVALID_AUDIENCE: 'Select who this bill is for (Customer or Staff).',
-  AUDIENCE_MISMATCH: 'This session is billed for the other audience. Pick the matching one.',
+  AUDIENCE_MISMATCH: 'This session is billing for the other audience.',
   MIXED_AUDIENCE: 'This session mixes Customer and Staff orders. Bill one audience at a time.',
   IDEMPOTENCY_KEY_REQUIRED: 'This checkout is missing its reference. Please start a new bill.',
   IDEMPOTENCY_KEY_REUSED: 'This checkout was already completed with different details. Start a new bill.',

@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -16,6 +17,22 @@ import AddItemModal from './AddItemModal';
 import { createIngredient, deleteIngredient, getIngredients, getUnits } from '../../api/inventoryService';
 import { formatQty, getErrorMessage } from '../../utils/inventoryUtils';
 import { COLORS, RADIUS, SPACING } from '../../theme';
+
+function InventoryImage({ uri }) {
+  const [failed, setFailed] = useState(false);
+  if (!uri || failed) {
+    return null;
+  }
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.itemImage}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+      accessibilityLabel="Inventory item image"
+    />
+  );
+}
 
 // Inventory section: a simple list of purchased items plus one "Add Inventory"
 // action. The add form captures only name, unit, total quantity and total price.
@@ -116,6 +133,7 @@ export default function InventoryScreen() {
     const deleting = deletingId === item._id;
     return (
       <View style={styles.card}>
+        <InventoryImage key={item.imageUrl || 'no-image'} uri={item.imageUrl} />
         <View style={styles.cardHeader}>
           <Text style={styles.itemName} numberOfLines={2}>
             {item.name}
@@ -199,6 +217,13 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     padding: SPACING.lg,
     marginBottom: SPACING.lg,
+  },
+  itemImage: {
+    width: '100%',
+    height: 140,
+    borderRadius: RADIUS.md,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.background,
   },
   cardHeader: {
     flexDirection: 'row',

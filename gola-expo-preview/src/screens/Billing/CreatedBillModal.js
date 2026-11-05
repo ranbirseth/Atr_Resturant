@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PRINTER_ENABLED } from '../../config/features';
 import thermalPrinterService from '../../services/thermalPrinterService';
 import { COLORS, RADIUS, SPACING } from '../../theme';
 import { formatCurrency } from '../../utils/billingUtils';
@@ -35,7 +36,7 @@ export default function CreatedBillModal({ bill, onClose }) {
   const label = audienceLabel(bill.audience) || 'Customer';
 
   async function handlePrint() {
-    if (printing) {
+    if (!PRINTER_ENABLED || printing) {
       return;
     }
     setPrinting(true);
@@ -138,13 +139,15 @@ export default function CreatedBillModal({ bill, onClose }) {
           </ScrollView>
 
           <View style={styles.actions}>
-            <Pressable
-              style={[styles.printButton, printing && styles.disabledButton]}
-              onPress={handlePrint}
-              disabled={printing}
-              accessibilityRole="button">
-              <Text style={styles.printButtonText}>{printing ? 'Printing…' : 'Print Bill'}</Text>
-            </Pressable>
+            {PRINTER_ENABLED ? (
+              <Pressable
+                style={[styles.printButton, printing && styles.disabledButton]}
+                onPress={handlePrint}
+                disabled={printing}
+                accessibilityRole="button">
+                <Text style={styles.printButtonText}>{printing ? 'Printing…' : 'Print Bill'}</Text>
+              </Pressable>
+            ) : null}
             <Pressable style={styles.closeButton} onPress={onClose} accessibilityRole="button">
               <Text style={styles.closeButtonText}>New Bill</Text>
             </Pressable>

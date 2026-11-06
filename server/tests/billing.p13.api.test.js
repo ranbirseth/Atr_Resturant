@@ -68,11 +68,12 @@ async function createUser() {
 }
 
 let itemSeq = 0;
-async function createItem({ name, price, category, available, availableForStaff }) {
+async function createItem({ name, price, staffPrice, category, available, availableForStaff }) {
     itemSeq += 1;
     return Item.create({
         name: name || `Item-${itemSeq}`,
         price,
+        staffPrice,
         category: category || 'Mains',
         available: available !== undefined ? available : true,
         availableForStaff: availableForStaff !== undefined ? availableForStaff : true,
@@ -149,10 +150,10 @@ test('session CUSTOMER bill is independently priced at current menu prices', asy
     assert.equal(res.data.orders[0].items[0].price, 40);
 });
 
-test('session STAFF bill prices at 60% and carries no coupon', async () => {
+test('session STAFF bill uses manual item price and carries no coupon', async () => {
     const user = await createUser();
     const sessionId = `sess-p13-staff-${user._id}`;
-    const item = await createItem({ name: 'Thali', price: 100 });
+    const item = await createItem({ name: 'Thali', price: 100, staffPrice: 60 });
     await createOrder({
         user,
         sessionId,
@@ -331,7 +332,20 @@ test('POS STAFF pricing and eligibility are enforced server-side', async () => {
         idempotencyKey: 'staff-ok',
     });
     assert.equal(ok.status, 201, JSON.stringify(ok.data));
-    assert.equal(ok.data.totalAmount, 60, '60% staff price');
+    assert.equal(ok.data.totalAmount, 100, 'missing staffPrice falls back to customer price');
+
+    const manualStaffItem = await createItem({
+        name: 'ManualStaffOK',
+        price: 200,
+        staffPrice: 120,
+    });
+    const manual = await api('/pos/bills', 'POST', {
+        audience: 'STAFF',
+        items: [{ itemId: String(manualStaffItem._id), quantity: 1 }],
+        idempotencyKey: 'staff-manual',
+    });
+    assert.equal(manual.status, 201, JSON.stringify(manual.data));
+    assert.equal(manual.data.totalAmount, 120);
 
     // Item hidden from staff via category.
     await Category.create({ name: 'Secret', staffVisible: false });
@@ -350,7 +364,7 @@ test('POS STAFF pricing and eligibility are enforced server-side', async () => {
 test('bill-based analytics recognizes OPEN/SETTLED, separates voids and groups by audience/origin', async () => {
     const user = await createUser();
     const custItem = await createItem({ name: 'AnalyticsCust', price: 100 });
-    const staffItem = await createItem({ name: 'AnalyticsStaff', price: 200 });
+    const staffItem = await createItem({ name: 'AnalyticsStaff', price: 200, staffPrice: 120 });
 
     // 1) OPEN customer session bill of 100.
     const sessOpen = `sess-an-open-${user._id}`;
@@ -366,7 +380,7 @@ test('bill-based analytics recognizes OPEN/SETTLED, separates voids and groups b
     const pay = await api(`/bills/${settleBill.data._id}/payments`, 'POST', { amount: 100, method: 'CASH', idempotencyKey: 'an-settle-pay' });
     assert.equal(pay.status, 201, JSON.stringify(pay.data));
 
-    // 3) POS staff bill of 120 (60% of 200).
+    // 3) POS staff bill uses the configured staff price of 120.
     const pos = await api('/pos/bills', 'POST', { audience: 'STAFF', items: [{ itemId: String(staffItem._id), quantity: 1 }], idempotencyKey: 'an-pos' });
     assert.equal(pos.status, 201, JSON.stringify(pos.data));
     assert.equal(pos.data.totalAmount, 120);

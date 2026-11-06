@@ -341,6 +341,24 @@ const recordMovement = async (req, res) => {
         }
         const magnitude = Math.abs(delta);
         const movementDate = value.movementDate || new Date();
+        let consumptionUnitCost = Number(ingredient.purchasePrice);
+        let hasConsumptionUnitCost =
+            ingredient.purchasePrice !== null &&
+            ingredient.purchasePrice !== undefined &&
+            Number.isFinite(consumptionUnitCost) &&
+            consumptionUnitCost >= 0;
+        if (value.type === 'CONSUMPTION' && !hasConsumptionUnitCost) {
+            const latestPurchaseMovement = await StockMovement.findOne({
+                ingredientId: ingredient._id,
+                type: { $in: ['OPENING', 'RESTOCK'] },
+                unitCost: { $ne: null },
+            }).sort({ movementDate: -1, createdAt: -1 });
+            const lastPurchaseCost = Number(latestPurchaseMovement && latestPurchaseMovement.unitCost);
+            if (Number.isFinite(lastPurchaseCost) && lastPurchaseCost >= 0) {
+                consumptionUnitCost = lastPurchaseCost;
+                hasConsumptionUnitCost = true;
+            }
+        }
 
         const movementFields = {
             ingredientId: ingredient._id,
@@ -349,7 +367,9 @@ const recordMovement = async (req, res) => {
             unit: ingredient.unit,
             movementDate,
             note: value.note || '',
-            unitCost: value.unitCost !== undefined ? value.unitCost : null,
+            unitCost: value.type === 'CONSUMPTION'
+                ? (hasConsumptionUnitCost ? consumptionUnitCost : 0)
+                : value.unitCost !== undefined ? value.unitCost : null,
             createdBy: value.createdBy || 'admin',
         };
 

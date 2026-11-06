@@ -1,6 +1,6 @@
 'use strict';
 
-// Integration tests for P1.1 automatic staff pricing (60% of customer price).
+// Integration tests for manual staff pricing with customer-price fallback.
 // Run with:   node --test tests/items.api.test.js
 //
 // They connect to a DEDICATED local test database (never the app database) and
@@ -16,12 +16,6 @@ const mongoose = require('mongoose');
 const app = require('../server');
 const Item = require('../models/Item');
 const Category = require('../models/Category');
-
-// Mirror of the server formula (menuUtils.computeStaffPrice) used only to
-// compute expected values inside the test.
-function expectedStaffPrice(price) {
-    return Math.round(price * 0.6 * 100) / 100;
-}
 
 let server;
 let base;
@@ -92,17 +86,33 @@ test('POST /api/items succeeds without staffPrice and stores none', async () => 
     assert.equal(stored.staffPrice, undefined);
 });
 
-test('POST /api/items ignores a client-supplied staffPrice', async () => {
+test('POST /api/items accepts and stores a manual staffPrice', async () => {
     const res = await api('POST', '/', {
-        name: 'Hacked Masala',
+        name: 'Manual Price Masala',
         category: 'Starters',
         price: 250,
         staffPrice: 1,
     });
     assert.equal(res.status, 201, JSON.stringify(res.data));
-    const stored = await Item.findOne({ name: 'Hacked Masala' }).lean();
+    const stored = await Item.findOne({ name: 'Manual Price Masala' }).lean();
     assert.equal(stored.price, 250);
-    assert.equal(stored.staffPrice, undefined);
+    assert.equal(stored.staffPrice, 1);
+});
+
+test('PUT /api/items accepts a manual staffPrice and rejects invalid values', async () => {
+    const created = await api('POST', '/', {
+        name: 'Updated Dish',
+        category: 'Starters',
+        price: 200,
+    });
+    assert.equal(created.status, 201);
+
+    const updated = await api('PUT', `/${created.data._id}`, { staffPrice: 100 });
+    assert.equal(updated.status, 200, JSON.stringify(updated.data));
+    assert.equal(updated.data.staffPrice, 100);
+
+    const invalid = await api('PUT', `/${created.data._id}`, { staffPrice: -1 });
+    assert.equal(invalid.status, 400);
 });
 
 test('customer listing keeps customer pricing and never exposes staff fields', async () => {
@@ -116,21 +126,25 @@ test('customer listing keeps customer pricing and never exposes staff fields', a
     assert.equal(chai.availableForStaff, undefined);
 });
 
-test('staff listing exposes the derived 60% staff price', async () => {
+test('staff listing exposes manual prices and falls back to customer price', async () => {
     await api('POST', '/', { name: 'Burger X', category: 'Starters', price: 100 });
     await api('POST', '/', { name: 'Pasta Y', category: 'Starters', price: 99 });
+    await api('POST', '/', {
+        name: 'Priced Snack',
+        category: 'Starters',
+        price: 200,
+        staffPrice: 100,
+    });
     const res = await api('GET', '/?audience=staff');
     assert.equal(res.status, 200);
     const byName = {};
     res.data.forEach((item) => { byName[item.name] = item; });
-    assert.equal(byName['Burger X'].staffPrice, 60);
-    assert.equal(byName['Pasta Y'].staffPrice, 59.4);
-    res.data.forEach((item) => {
-        assert.equal(item.staffPrice, expectedStaffPrice(item.price), `staffPrice for ${item.name}`);
-    });
+    assert.equal(byName['Burger X'].staffPrice, 100);
+    assert.equal(byName['Pasta Y'].staffPrice, 99);
+    assert.equal(byName['Priced Snack'].staffPrice, 100);
 });
 
-test('legacy documents with a stored staffPrice stay readable and use the derived value', async () => {
+test('existing stored staffPrice is used and preserved when unrelated fields change', async () => {
     const legacy = await Item.create({
         name: 'Legacy Dish',
         category: 'Starters',
@@ -145,7 +159,7 @@ test('legacy documents with a stored staffPrice stay readable and use the derive
     const staff = await api('GET', '/?audience=staff');
     assert.equal(staff.status, 200);
     const row = staff.data.find((item) => item.name === 'Legacy Dish');
-    assert.equal(row.staffPrice, 120, 'derived value wins over legacy 150');
+    assert.equal(row.staffPrice, 150);
 
     // Updating an unrelated field must preserve the stored legacy staffPrice.
     const put = await api('PUT', `/${legacy._id}`, { description: 'updated' });
@@ -167,5 +181,5 @@ test('staff listing retains staff availability fields', async () => {
     const row = res.data.find((item) => item.name === 'Staff Only Snack');
     assert.equal(row.availableForStaff, true);
     assert.equal(row.available, false);
-    assert.equal(row.staffPrice, 30);
+    assert.equal(row.staffPrice, 50);
 });

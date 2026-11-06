@@ -149,7 +149,7 @@ function filterNonCancelledOrders(orders) {
 // and is therefore counted in the total, but never in revenue).
 // Pending Orders: PENDING + PLACED (cancelled is never pending).
 // Completed Orders: COMPLETED (+ legacy "Completed" after normalization).
-// Total Revenue: sum of totalAmount for paid, non-cancelled orders only.
+// Total Revenue: sum of totalAmount for paid or completed, non-cancelled orders.
 function computeStats(orders) {
   const list = Array.isArray(orders) ? orders : [];
   let pendingOrders = 0;
@@ -167,7 +167,10 @@ function computeStats(orders) {
     if (isCompletedOrder(order)) {
       completedOrders += 1;
     }
-    if (!isCancelledOrder(order) && isPaidOrder(order)) {
+    if (
+      !isCancelledOrder(order) &&
+      (isPaidOrder(order) || isCompletedOrder(order))
+    ) {
       totalRevenue += toNumber(order.totalAmount);
     }
   }
@@ -200,6 +203,12 @@ function isRecognizedBill(bill) {
   );
 }
 
+function getBillAudience(bill) {
+  const audience =
+    bill.audience || (bill.totalAmount != null ? 'CUSTOMER' : '');
+  return String(audience).trim().toUpperCase();
+}
+
 function selectTodayPosBills(bills, now) {
   return filterOrdersForIstDay(bills, now).filter(isPosBill);
 }
@@ -222,9 +231,9 @@ function isCollectedPayment(payment, start, end) {
   );
 }
 
-// POS bills are separate from Orders and only contribute revenue when a
-// payment is received during the current IST day. Voided bills and reversed
-// payments are excluded; SESSION bills remain represented by order revenue.
+// Customer POS bills contribute their full total on their creation day. Staff
+// POS bills contribute only settled payments received during the current IST
+// day. Legacy POS bills without an audience retain payment-based accounting.
 function computeTodayPosRevenue(bills, now) {
   const bounds = istDayBounds(now);
   const start = bounds.start.getTime();
@@ -237,6 +246,34 @@ function computeTodayPosRevenue(bills, now) {
     if (!isRecognizedBill(bill)) {
       return total;
     }
+    const audience = getBillAudience(bill);
+    const createdToday = filterOrdersForIstDay([bill], now).length > 0;
+
+    if (audience === 'CUSTOMER') {
+      return createdToday
+        ? total + Math.max(0, toNumber(bill.totalAmount))
+        : total;
+    }
+
+    if (audience === 'STAFF') {
+      if (String(bill.status || '').trim().toUpperCase() !== 'SETTLED') {
+        return total;
+      }
+      if (Array.isArray(bill.payments) && bill.payments.length > 0) {
+        return (
+          total +
+          bill.payments.reduce(function (billTotal, payment) {
+            return isCollectedPayment(payment, start, end)
+              ? billTotal + Math.max(0, toNumber(payment.amount))
+              : billTotal;
+          }, 0)
+        );
+      }
+      return createdToday
+        ? total + Math.max(0, toNumber(bill.amountPaid))
+        : total;
+    }
+
     if (Array.isArray(bill.payments) && bill.payments.length > 0) {
       return (
         total +
@@ -311,8 +348,8 @@ function formatIstTime(value) {
 
 // Hourly order + revenue profile for the current IST day.
 // Returns 24 buckets (one per IST hour, oldest first). Count includes orders;
-// revenue includes non-cancelled orders and paid POS bills. Rendering narrows
-// this to hours with orders or revenue via `populatedTrendHours`.
+// revenue includes non-cancelled orders and bill-type-aware POS revenue.
+// Rendering narrows this to hours with orders or revenue via `populatedTrendHours`.
 function buildTodayTrend(orders, now, posBills) {
   const today = filterOrdersForIstDay(orders, now);
   const dayKey = istDateKey(now);
@@ -342,7 +379,10 @@ function buildTodayTrend(orders, now, posBills) {
       continue;
     }
     buckets[hour].count += 1;
-    if (!isCancelledOrder(order) && isPaidOrder(order)) {
+    if (
+      !isCancelledOrder(order) &&
+      (isPaidOrder(order) || isCompletedOrder(order))
+    ) {
       buckets[hour].revenue += toNumber(order.totalAmount);
     }
   }
@@ -359,6 +399,27 @@ function buildTodayTrend(orders, now, posBills) {
     ) {
       continue;
     }
+    const audience = getBillAudience(bill);
+    if (audience === 'CUSTOMER') {
+      if (!bill.createdAt || filterOrdersForIstDay([bill], now).length === 0) {
+        continue;
+      }
+      const created = new Date(bill.createdAt);
+      if (!Number.isNaN(created.getTime())) {
+        const shifted = new Date(created.getTime() + IST_OFFSET_MS);
+        buckets[shifted.getUTCHours()].revenue += Math.max(
+          0,
+          toNumber(bill.totalAmount),
+        );
+      }
+      continue;
+    }
+    if (
+      audience === 'STAFF' &&
+      String(bill.status || '').trim().toUpperCase() !== 'SETTLED'
+    ) {
+      continue;
+    }
     if (Array.isArray(bill.payments) && bill.payments.length > 0) {
       bill.payments.forEach(function (payment) {
         if (!isCollectedPayment(payment, start, end)) {
@@ -372,7 +433,10 @@ function buildTodayTrend(orders, now, posBills) {
       const created = new Date(bill.createdAt);
       if (!Number.isNaN(created.getTime())) {
         const shifted = new Date(created.getTime() + IST_OFFSET_MS);
-        buckets[shifted.getUTCHours()].revenue += Math.max(0, toNumber(bill.amountPaid));
+        buckets[shifted.getUTCHours()].revenue += Math.max(
+          0,
+          toNumber(audience === 'CUSTOMER' ? bill.totalAmount : bill.amountPaid),
+        );
       }
     }
   }

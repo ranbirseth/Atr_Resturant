@@ -157,7 +157,52 @@ test('consumption reduces balance and records a CONSUMPTION movement', async () 
     assert.equal(res.status, 201, JSON.stringify(res.data));
     assert.equal(res.data.ingredient.currentQty, 12);
     assert.equal(res.data.movement.quantityDelta, -8);
+    assert.equal(res.data.movement.unitCost, 0);
     assert.equal(res.data.ingredient.usagePercent, 40);
+});
+
+test('consumption snapshots the ingredient purchase price instead of a client-supplied cost', async () => {
+    const item = await createItem({
+        name: 'Olive Oil',
+        unit: 'litre',
+        openingQty: 5,
+        purchasePrice: 42.5,
+    });
+    const res = await api('POST', '/stock/movements', {
+        ingredientId: item._id,
+        type: 'CONSUMPTION',
+        quantity: 1.5,
+        unitCost: 999,
+    });
+
+    assert.equal(res.status, 201, JSON.stringify(res.data));
+    assert.equal(res.data.movement.unitCost, 42.5);
+
+    const movements = await api(
+        'GET',
+        `/stock/movements?ingredientId=${item._id}&type=CONSUMPTION`,
+    );
+    assert.equal(movements.status, 200);
+    assert.equal(movements.data[0].unitCost, 42.5);
+});
+
+test('consumption falls back to the latest opening or restock unit cost', async () => {
+    const item = await createItem({
+        name: 'Vegetable',
+        unit: 'kg',
+        openingQty: 10,
+        openingUnitCost: 36.5,
+    });
+    assert.equal(item.purchasePrice, null);
+
+    const res = await api('POST', '/stock/movements', {
+        ingredientId: item._id,
+        type: 'CONSUMPTION',
+        quantity: 3,
+    });
+
+    assert.equal(res.status, 201, JSON.stringify(res.data));
+    assert.equal(res.data.movement.unitCost, 36.5);
 });
 
 test('consumption beyond available returns 409 and does not change balance', async () => {
@@ -619,4 +664,3 @@ test('DELETE unknown id returns 404', async () => {
     const res = await api('DELETE', `/ingredients/${new mongoose.Types.ObjectId()}`);
     assert.equal(res.status, 404);
 });
-

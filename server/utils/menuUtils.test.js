@@ -26,8 +26,7 @@ function dbItem(overrides) {
             name: 'Paneer Tikka',
             category: 'Starters',
             price: 200,
-            // Legacy stored value. P1.1: pricing must NEVER use this; the staff
-            // price is derived as 60% of `price` (200 -> 120).
+            // Explicit staff price; tests can override with missing, null, or zero.
             staffPrice: 150,
             available: true,
             availableForStaff: true,
@@ -43,7 +42,7 @@ test('validateItemInput requires name, category and price on create (no staffPri
     assert.equal(value.staffPrice, undefined);
 });
 
-test('validateItemInput create succeeds without a staff price (derived, never stored)', () => {
+test('validateItemInput create succeeds without a staff price (customer-price fallback)', () => {
     const { errors, value } = validateItemInput(
         { name: 'Tea', category: 'Beverages', price: 20 },
         { partial: false }
@@ -53,14 +52,33 @@ test('validateItemInput create succeeds without a staff price (derived, never st
     assert.equal(value.staffPrice, undefined);
 });
 
-test('validateItemInput ignores a client-supplied staffPrice', () => {
+test('validateItemInput accepts and normalizes staffPrice', () => {
     const { errors, value } = validateItemInput(
         { name: 'Tea', category: 'Beverages', price: 20, staffPrice: 999 },
         { partial: false }
     );
     assert.deepEqual(errors, []);
     assert.equal(value.price, 20);
-    assert.equal(value.staffPrice, undefined);
+    assert.equal(value.staffPrice, 999);
+});
+
+test('validateItemInput accepts null staffPrice for customer-price fallback', () => {
+    const { errors, value } = validateItemInput(
+        { name: 'Tea', category: 'Beverages', price: 20, staffPrice: null },
+        { partial: false }
+    );
+    assert.deepEqual(errors, []);
+    assert.equal(value.staffPrice, null);
+});
+
+test('validateItemInput rejects negative and malformed staff prices', () => {
+    const base = { name: 'X', category: 'Y', price: 200 };
+    for (const staffPrice of [-1, 'abc', Infinity, NaN, {}]) {
+        assert.ok(
+            validateItemInput({ ...base, staffPrice }, { partial: false }).errors.length > 0,
+            `expected ${String(staffPrice)} to be rejected`
+        );
+    }
 });
 
 test('validateItemInput accepts zero prices', () => {
@@ -132,28 +150,18 @@ test('price and quantity helpers reject bad input', () => {
     assert.equal(isValidQuantity(999), true);
 });
 
-test('computeStaffPrice is exactly 60% of the customer price, rounded to 2dp', () => {
-    assert.equal(computeStaffPrice(100), 60);
-    assert.equal(computeStaffPrice(99), 59.4);
-    assert.equal(computeStaffPrice(99.99), 59.99);
-    assert.equal(computeStaffPrice(0), 0);
-});
-
-test('computeStaffPrice handles half-paise boundaries (rounds half up) and float dust', () => {
-    // 0.075 -> 4.5 paise -> rounds up to 5 paise -> 0.05
-    assert.equal(computeStaffPrice(0.075), 0.05);
-    // 99.9916666... -> 59.995 -> 60.00
-    assert.equal(computeStaffPrice(99.99166666666667), 60);
-    // Exact multiples never leak float dust.
-    assert.equal(computeStaffPrice(199.99), 119.99);
+test('computeStaffPrice uses explicit staffPrice, including zero', () => {
+    assert.equal(computeStaffPrice(200, 100), 100);
+    assert.equal(computeStaffPrice(200, 0), 0);
 });
 
 test('computeStaffPrice is null-safe and rejects malformed input', () => {
-    assert.equal(computeStaffPrice(undefined), null);
-    assert.equal(computeStaffPrice(null), null);
-    assert.equal(computeStaffPrice(-1), null);
-    assert.equal(computeStaffPrice('abc'), null);
-    assert.equal(computeStaffPrice(Infinity), null);
+    assert.equal(computeStaffPrice(200, null), 200);
+    assert.equal(computeStaffPrice(200, undefined), 200);
+    assert.equal(computeStaffPrice(undefined, null), null);
+    assert.equal(computeStaffPrice(200, -1), null);
+    assert.equal(computeStaffPrice(200, 'abc'), null);
+    assert.equal(computeStaffPrice(200, Infinity), null);
 });
 
 test('buildAuthoritativeOrder uses the customer price for CUSTOMER orders', () => {
@@ -168,27 +176,36 @@ test('buildAuthoritativeOrder uses the customer price for CUSTOMER orders', () =
     assert.equal(result.audience, 'CUSTOMER');
 });
 
-test('buildAuthoritativeOrder derives the staff price as 60% of the customer price', () => {
+test('buildAuthoritativeOrder uses staffPrice 100 instead of customer price 200', () => {
     const result = buildAuthoritativeOrder({
-        requestedItems: [{ itemId: '507f1f77bcf86cd799439011', quantity: 3 }],
-        dbItems: [dbItem()],
+        requestedItems: [{ itemId: '507f1f77bcf86cd799439011', quantity: 1 }],
+        dbItems: [dbItem({ staffPrice: 100 })],
         audience: 'STAFF',
     });
     assert.equal(result.ok, true);
-    assert.equal(result.lines[0].price, 120);
-    assert.equal(result.subtotal, 360);
+    assert.equal(result.lines[0].price, 100);
+    assert.equal(result.subtotal, 100);
     assert.equal(result.audience, 'STAFF');
 });
 
-test('buildAuthoritativeOrder ignores a legacy stored staffPrice for new pricing', () => {
-    // 200 * 0.60 = 120, never the legacy 150.
+test('buildAuthoritativeOrder falls back to customer price when staffPrice is null', () => {
     const result = buildAuthoritativeOrder({
         requestedItems: [{ itemId: '507f1f77bcf86cd799439011', quantity: 1 }],
-        dbItems: [dbItem({ staffPrice: 150 })],
+        dbItems: [dbItem({ staffPrice: null })],
         audience: 'STAFF',
     });
     assert.equal(result.ok, true);
-    assert.equal(result.lines[0].price, 120);
+    assert.equal(result.lines[0].price, 200);
+});
+
+test('buildAuthoritativeOrder uses a zero staff price instead of falling back', () => {
+    const result = buildAuthoritativeOrder({
+        requestedItems: [{ itemId: '507f1f77bcf86cd799439011', quantity: 1 }],
+        dbItems: [dbItem({ staffPrice: 0 })],
+        audience: 'STAFF',
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.lines[0].price, 0);
 });
 
 test('buildAuthoritativeOrder ignores tampered client prices and totals', () => {
@@ -204,15 +221,14 @@ test('buildAuthoritativeOrder ignores tampered client prices and totals', () => 
     assert.equal(result.subtotal, 200);
 });
 
-test('buildAuthoritativeOrder rejects a staff order when the customer price is missing', () => {
-    // A legacy stored staffPrice alone must NOT price a staff line.
+test('buildAuthoritativeOrder uses staffPrice when customer price is missing', () => {
     const result = buildAuthoritativeOrder({
         requestedItems: [{ itemId: '507f1f77bcf86cd799439011', quantity: 1 }],
         dbItems: [dbItem({ price: undefined, staffPrice: 150 })],
         audience: 'STAFF',
     });
-    assert.equal(result.ok, false);
-    assert.match(result.message, /price is not configured/i);
+    assert.equal(result.ok, true);
+    assert.equal(result.lines[0].price, 150);
 });
 
 test('buildAuthoritativeOrder rejects unavailable items for the audience', () => {

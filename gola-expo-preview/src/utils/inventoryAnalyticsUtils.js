@@ -61,6 +61,21 @@ function movementQty(movement) {
 }
 
 function calculateConsumptionCost(movements, ingredients, fromMs, toMs) {
+  const rawMovements = Array.isArray(movements) ? movements : [];
+  console.log('[InventoryCost] Raw movements', {
+    length: rawMovements.length,
+    movements: rawMovements.map(function (movement) {
+      return {
+        ingredientId: movement && movement.ingredientId,
+        type: movement && movement.type,
+        status: movement && movement.status,
+        movementDate: movement && movement.movementDate,
+        unitCost: movement && movement.unitCost,
+      };
+    }),
+    from: new Date(fromMs).toISOString(),
+    to: new Date(toMs).toISOString(),
+  });
   const consumption = filterCommittedInRange(movements, fromMs, toMs).filter(function (movement) {
     return normalizeType(movement) === 'CONSUMPTION';
   });
@@ -71,6 +86,12 @@ function calculateConsumptionCost(movements, ingredients, fromMs, toMs) {
   for (let i = 0; i < consumption.length; i++) {
     const movement = consumption[i];
     const ingredient = stock.get(String(movement.ingredientId || ''));
+    console.log('[InventoryCost] Ingredient lookup', {
+      ingredientId: movement.ingredientId,
+      found: !!ingredient,
+      purchasePrice: ingredient && ingredient.purchasePrice,
+      unitCost: movement.unitCost,
+    });
     const movementCost =
       movement.unitCost === null || movement.unitCost === undefined || movement.unitCost === ''
         ? NaN
@@ -80,25 +101,27 @@ function calculateConsumptionCost(movements, ingredients, fromMs, toMs) {
       purchasePrice === null || purchasePrice === undefined || purchasePrice === ''
         ? NaN
         : Number(purchasePrice);
-    const unitCost =
-      Number.isFinite(movementCost) && movementCost >= 0
-        ? movementCost
-        : Number.isFinite(ingredientCost) && ingredientCost >= 0
-          ? ingredientCost
-          : null;
+    const hasMovementCost = Number.isFinite(movementCost) && movementCost >= 0;
+    const hasIngredientCost = Number.isFinite(ingredientCost) && ingredientCost >= 0;
+    const resolvedUnitCost = hasMovementCost
+      ? movementCost
+      : hasIngredientCost
+        ? ingredientCost
+        : 0;
 
-    if (unitCost === null) {
+    if (!hasMovementCost && !hasIngredientCost) {
       unpricedMovements += 1;
-      continue;
     }
-    totalCost += Math.abs(movementQty(movement)) * unitCost;
+    totalCost += Math.abs(movementQty(movement)) * resolvedUnitCost;
   }
 
-  return {
+  const result = {
     totalCost: round2(totalCost),
     consumptionMovements: consumption.length,
     unpricedMovements: unpricedMovements,
   };
+  console.log('[InventoryCost] Final total', result);
+  return result;
 }
 
 // Movements whose movementDate is a valid instant inside [fromMs, toMs]

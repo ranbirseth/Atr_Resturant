@@ -20,15 +20,15 @@ async function resolveCategoryName(name) {
 // @route   GET /api/items?audience=customer|staff
 // @access  Public
 // customer (default): bare array, never exposes staff-only fields.
-// staff: exposes the DERIVED staffPrice (60% of customer price, rounded to two
-// decimals) plus availableForStaff (NOT an auth boundary).
+// staff: exposes the configured staffPrice (or customer-price fallback) plus
+// availableForStaff (NOT an auth boundary).
 const getItems = async (req, res) => {
     try {
         const audience = normalizeAudience(req.query.audience);
         if (audience === 'STAFF') {
             const items = await Item.find({}).lean();
             res.json(items.map((item) => Object.assign({}, item, {
-                staffPrice: computeStaffPrice(item.price),
+                staffPrice: computeStaffPrice(item.price, item.staffPrice),
             })));
             return;
         }

@@ -29,10 +29,9 @@ function isValidPrice(value) {
   return toFinitePrice(value) !== null;
 }
 
-// Staff items use the same list price as customer items. Staff discounts are
-// entered per bill and are not derived from a fixed percentage.
-function computeStaffPrice(price) {
-  return toFinitePrice(price);
+// A configured staff price takes precedence; legacy items fall back to price.
+function computeStaffPrice(price, staffPrice) {
+  return toFinitePrice(staffPrice ?? price);
 }
 
 function normalizeCategoryName(name) {
@@ -54,9 +53,7 @@ function formatPrice(value) {
   return formatCurrency(parsed);
 }
 
-// Two-decimal rupee string (e.g. "₹59.40"), used for the derived staff price so
-// the paise-level rounding from computeStaffPrice is never hidden by the
-// integer-only formatPrice.
+// Two-decimal rupee string (e.g. "₹59.40") for exact price display.
 function formatPriceExact(value) {
   const parsed = toFinitePrice(value);
   if (parsed === null) {
@@ -90,13 +87,14 @@ function itemImageUrl(item, apiBaseUrl) {
   return null;
 }
 
-// Price shown for a given audience ('CUSTOMER' | 'STAFF'). Both audiences use
-// the menu list price; staff discounts belong to the bill, not the item.
+// Price shown for a given audience ('CUSTOMER' | 'STAFF').
 function audiencePrice(item, audience) {
   if (!item) {
     return null;
   }
-  return toFinitePrice(item.price);
+  return String(audience || '').trim().toUpperCase() === 'STAFF'
+    ? computeStaffPrice(item.price, item.staffPrice)
+    : toFinitePrice(item.price);
 }
 
 // Search + category + veg filters for the item list.
@@ -147,6 +145,14 @@ function validateItemForm(form) {
   }
   if (toFinitePrice(values.price) === null) {
     errors.price = 'Customer price must be 0 or more';
+  }
+  if (
+    values.staffPrice !== undefined &&
+    values.staffPrice !== null &&
+    String(values.staffPrice).trim() !== '' &&
+    toFinitePrice(values.staffPrice) === null
+  ) {
+    errors.staffPrice = 'Staff price must be 0 or more';
   }
 
   const prep = values.estimatedPreparationTime;

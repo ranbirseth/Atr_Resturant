@@ -100,7 +100,7 @@ test('filterCommittedInRange drops RESERVED, out-of-range and undatable movement
   assert.equal(filterCommittedInRange([{ ingredientId: 'x', type: 'CONSUMPTION', quantityDelta: -1, movementDate: 'bad' }], FROM_7D, TO_7D).length, 0);
 });
 
-test('calculateConsumptionCost uses movement cost then purchase price and excludes unpriced usage', () => {
+test('calculateConsumptionCost uses movement cost then purchase price and counts unpriced usage as zero', () => {
   const start = Date.UTC(2026, 9, 9);
   const end = start + DAY - 1;
   const movements = [
@@ -119,6 +119,27 @@ test('calculateConsumptionCost uses movement cost then purchase price and exclud
 
   assert.deepEqual(calculateConsumptionCost(movements, ingredients, start, end), {
     totalCost: 12,
+    consumptionMovements: 3,
+    unpricedMovements: 1,
+  });
+});
+
+test('calculateConsumptionCost preserves zero costs and falls back when movement cost is null', () => {
+  const start = Date.UTC(2026, 9, 9);
+  const end = start + DAY - 1;
+  const movements = [
+    {ingredientId: 'zero', type: 'CONSUMPTION', quantityDelta: -2, unitCost: 0, movementDate: new Date(start + 1)},
+    {ingredientId: 'null-cost', type: 'CONSUMPTION', quantityDelta: -3, unitCost: null, movementDate: new Date(start + 2)},
+    {ingredientId: 'missing-price', type: 'CONSUMPTION', quantityDelta: -4, movementDate: new Date(start + 3)},
+  ];
+  const ingredients = [
+    {_id: 'zero', purchasePrice: 10},
+    {_id: 'null-cost', purchasePrice: 5},
+    {_id: 'missing-price', purchasePrice: null},
+  ];
+
+  assert.deepEqual(calculateConsumptionCost(movements, ingredients, start, end), {
+    totalCost: 15,
     consumptionMovements: 3,
     unpricedMovements: 1,
   });

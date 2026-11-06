@@ -175,7 +175,7 @@ export default function DashboardScreen() {
       label: "Today's Revenue",
       value: formatCurrency(stats.totalRevenue + posRevenue),
       accent: COLORS.revenue,
-      hint: 'IST today · orders + collected POS payments',
+      hint: 'IST today · orders + customer bill totals + settled staff payments',
     },
     {
       key: 'orders',
@@ -201,20 +201,15 @@ export default function DashboardScreen() {
     {
       key: 'inventory-cost',
       label: "Today's Inventory Cost",
-      value:
-        inventoryCostError ||
-        (inventoryUsageCost.consumptionMovements > 0 &&
-          inventoryUsageCost.unpricedMovements ===
-            inventoryUsageCost.consumptionMovements)
-          ? '—'
-          : formatCurrency(inventoryUsageCost.totalCost),
+      value: inventoryCostError ? '—' : formatCurrency(inventoryUsageCost.totalCost),
       accent: COLORS.accent,
       hint: inventoryCostError
         ? inventoryCostError
         : inventoryUsageCost.consumptionMovements === 0
           ? 'No consumption logged today'
-          : inventoryUsageCost.unpricedMovements > 0
-            ? `Estimate · ${inventoryUsageCost.unpricedMovements} movements lack a unit cost`
+          : inventoryUsageCost.totalCost === 0 ||
+              inventoryUsageCost.unpricedMovements > 0
+            ? 'Set ingredient purchase prices to see accurate cost.'
             : 'Estimate · logged usage × unit cost',
     },
   ];

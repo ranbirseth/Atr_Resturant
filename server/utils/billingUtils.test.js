@@ -235,7 +235,7 @@ test('P1.3 helpers behave correctly', () => {
     assert.equal(cust.subtotalPaise, 5000);
     const staff = priceLinesForAudience({audience:'STAFF', requestedItems:[{itemId:'a1', quantity:1, customizations:[]}], dbItems});
     assert.ok(staff.ok);
-    assert.equal(staff.subtotalPaise, 3000);
+    assert.equal(staff.subtotalPaise, 5000);
     const disc = applyPreservedDiscount(10000, 5000);
     assert.deepEqual(disc, {subtotalPaise:10000, discountPaise:5000, totalPaise:5000});
     assert.equal(applyPreservedDiscount(10000, 15000).discountPaise, 10000);

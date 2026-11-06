@@ -25,7 +25,14 @@ const {
   canGenerateBill,
 } = require('./billingUtils');
 
-const PANEER = { _id: 'i1', name: 'Paneer Tikka', price: 240, category: 'Starters', available: true };
+const PANEER = {
+  _id: 'i1',
+  name: 'Paneer Tikka',
+  price: 240,
+  staffPrice: 180,
+  category: 'Starters',
+  available: true,
+};
 const NAAN = { _id: 'i2', name: 'Butter Naan', price: 45, category: 'Breads', available: true };
 
 test('toQuantity floors, rejects non-positive/invalid, and clamps to MAX_QUANTITY', () => {
@@ -49,12 +56,13 @@ test('isItemSellable requires id, availability, and a usable customer price', ()
   assert.equal(isItemSellable(null), false);
 });
 
-test('lineFromItem derives a line from customer price with safe fallbacks', () => {
+test('lineFromItem retains both audience prices with safe fallbacks', () => {
   const line = lineFromItem(PANEER);
   assert.deepEqual(line, {
     itemId: 'i1',
     name: 'Paneer Tikka',
     price: 240,
+    staffPrice: 180,
     category: 'Starters',
     quantity: 1,
   });

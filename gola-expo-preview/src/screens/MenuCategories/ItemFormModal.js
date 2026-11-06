@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import FormModal from '../../components/FormModal';
 import { COLORS, RADIUS, SPACING } from '../../theme';
-import { computeStaffPrice, formatPriceExact, validateItemForm } from '../../utils/menuUtils';
+import { validateItemForm } from '../../utils/menuUtils';
 
 function toInput(value) {
   if (value === undefined || value === null) {
@@ -16,6 +16,7 @@ function emptyForm() {
     name: '',
     category: '',
     price: '',
+    staffPrice: '',
     description: '',
     image: '',
     isVeg: true,
@@ -29,12 +30,11 @@ function formFromItem(item) {
   if (!item) {
     return emptyForm();
   }
-  // Any legacy stored `item.staffPrice` is intentionally ignored (P1.1/P1.2):
-  // the staff price is derived, and is never edited or written back.
   return {
     name: toInput(item.name),
     category: item.category || '',
     price: toInput(item.price),
+    staffPrice: toInput(item.staffPrice),
     description: toInput(item.description),
     image: toInput(item.image),
     isVeg: item.isVeg !== false,
@@ -78,13 +78,12 @@ export default function ItemFormModal({ item, categories, saving, serverError, o
     if (!result.valid) {
       return;
     }
-    // The staff price is NOT sent: the backend is authoritative and derives it
-    // as 60% of the customer price. Sending a manual value would be ignored and
-    // would risk diverging from the server rule.
     const payload = {
       name: form.name.trim(),
       category: form.category,
       price: Number(form.price),
+      staffPrice:
+        String(form.staffPrice).trim() === '' ? null : Number(form.staffPrice),
       description: form.description.trim(),
       image: form.image.trim(),
       isVeg: form.isVeg,
@@ -96,9 +95,7 @@ export default function ItemFormModal({ item, categories, saving, serverError, o
     }
     onSubmit(payload);
   }
-
   const categoryOptions = Array.isArray(categories) ? categories : [];
-  const derivedStaffPrice = computeStaffPrice(form.price);
 
   return (
     <FormModal
@@ -148,25 +145,24 @@ export default function ItemFormModal({ item, categories, saving, serverError, o
       </View>
       {errors.category ? <Text style={styles.fieldError}>{errors.category}</Text> : null}
 
-      <View style={styles.row}>
-        <View style={styles.rowItem}>
-          <Field
-            label="Customer Price (₹)"
-            value={form.price}
-            onChangeText={(text) => setField('price', text)}
-            error={errors.price}
-            keyboardType="numeric"
-            placeholder="0"
-          />
-        </View>
-        <View style={styles.rowItem}>
-          <Text style={styles.label}>Staff Price (auto)</Text>
-          <View style={[styles.input, styles.readOnly]}>
-            <Text style={styles.readOnlyText}>{formatPriceExact(derivedStaffPrice)}</Text>
-          </View>
-          <Text style={styles.hint}>60% of customer price, rounded to 2 decimals</Text>
-        </View>
-      </View>
+      <Field
+        label="Customer Price (₹)"
+        value={form.price}
+        onChangeText={(text) => setField('price', text)}
+        error={errors.price}
+        keyboardType="numeric"
+        placeholder="0"
+      />
+
+      <Field
+        label="Staff Price (Manual)"
+        value={form.staffPrice}
+        onChangeText={(text) => setField('staffPrice', text)}
+        error={errors.staffPrice}
+        keyboardType="numeric"
+        placeholder="Leave blank to use customer price"
+      />
+      <Text style={styles.hint}>Leave blank to use the same price as customers.</Text>
 
       <View style={styles.row}>
         <View style={styles.rowItem}>
@@ -252,16 +248,6 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: COLORS.danger,
-  },
-  readOnly: {
-    justifyContent: 'center',
-    backgroundColor: COLORS.background,
-    opacity: 0.85,
-  },
-  readOnlyText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.muted,
   },
   fieldError: {
     marginTop: SPACING.xs,

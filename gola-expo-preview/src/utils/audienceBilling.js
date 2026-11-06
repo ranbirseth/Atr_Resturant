@@ -9,8 +9,8 @@
 // The audience is ALWAYS chosen explicitly before a bill is created; nothing
 // here defaults a new checkout to CUSTOMER. Client-side prices are a display
 // PREVIEW only - the server recomputes every amount authoritatively from the
-// database. Both audiences use the menu price; staff discounts are entered per
-// bill and applied after the subtotal.
+// database. Staff discounts are entered per bill and applied after audience-
+// specific item prices.
 
 const { toFinitePrice } = require('./menuUtils');
 
@@ -37,19 +37,24 @@ function audienceLabel(value) {
   return null;
 }
 
-// Preview unit price for the chosen audience. Both audiences use the menu
-// list price; any staff discount is applied to the bill total. Returns null for
-// a malformed price so callers can skip the line.
-function audienceUnitPrice(price, audience) {
+// Preview unit price for the chosen audience. Returns null for a malformed
+// price so callers can skip the line.
+function audienceUnitPrice(item, audience) {
+  if (!item || typeof item !== 'object') {
+    return null;
+  }
+  const price =
+    normalizeAudience(audience) === 'STAFF'
+      ? item.staffPrice ?? item.price
+      : item.price;
   return toFinitePrice(price);
 }
 
-// Returns a display copy of the cart. The line prices are unchanged because
-// staff discounts apply to the bill, not to individual menu items.
+// Returns a display copy of the cart with the selected audience's item prices.
 function cartForAudience(cart, audience) {
   const list = Array.isArray(cart) ? cart : [];
   return list.map(function (line) {
-    const priced = audienceUnitPrice(line && line.price, audience);
+    const priced = audienceUnitPrice(line, audience);
     return Object.assign({}, line, { price: priced === null ? (line && line.price) : priced });
   });
 }

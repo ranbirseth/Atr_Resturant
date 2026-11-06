@@ -177,7 +177,7 @@ export default function MenuManagement({
             <Text style={styles.priceValue}>{formatPrice(audiencePrice(item, 'CUSTOMER'))}</Text>
           </View>
           <View style={styles.priceBlock}>
-            <Text style={styles.priceLabel}>Staff (auto)</Text>
+            <Text style={styles.priceLabel}>Staff</Text>
             <Text style={styles.priceValue}>{formatPriceExact(audiencePrice(item, 'STAFF'))}</Text>
           </View>
         </View>

@@ -52,6 +52,7 @@ export default function AddItemModal({ units, saving, serverError, onClose, onSu
       unit: form.unit,
       openingQty: Number(form.quantity),
       openingUnitCost: computeUnitCost(form.totalPrice, form.quantity),
+      purchasePrice: computeUnitCost(form.totalPrice, form.quantity),
       minimumStockLevel: 0,
       imageUrl: form.imageUrl.trim(),
     });

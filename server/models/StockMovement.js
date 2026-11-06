@@ -35,8 +35,7 @@ const stockMovementSchema = new mongoose.Schema({
         type: String,
         default: '',
     },
-    // Per-unit purchase price for OPENING/RESTOCK (optional; legacy movements
-    // and non-purchase types have none).
+    // Per-unit purchase price snapshot for OPENING, RESTOCK, and CONSUMPTION.
     unitCost: {
         type: Number,
         min: [0, 'unitCost must be greater than or equal to 0'],

@@ -4,9 +4,8 @@
 // CommonJS (module.exports) with no React Native imports so the functions can
 // be unit-tested with Node's built-in test runner (see billingUtils.test.js).
 //
-// Prices always come from the customer-facing `price` on the menu item fetched
-// from GET /api/items?audience=customer. Nothing here invents prices, taxes,
-// service charges, or discounts.
+// Cart lines retain server-provided customer and staff prices for the preview.
+// The billing API remains authoritative for all final prices and totals.
 
 const { toFinitePrice } = require('./menuUtils');
 const { formatCurrency } = require('./dashboardMetrics');
@@ -58,6 +57,7 @@ function lineFromItem(item) {
     itemId: String(item._id),
     name: typeof item.name === 'string' && item.name.trim() ? item.name : 'Item',
     price: toFinitePrice(item.price),
+    staffPrice: item.staffPrice,
     category: typeof item.category === 'string' ? item.category : '',
     quantity: 1,
   };

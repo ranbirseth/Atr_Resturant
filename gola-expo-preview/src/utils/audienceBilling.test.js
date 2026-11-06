@@ -21,7 +21,14 @@ const {
 } = require('./audienceBilling');
 const { cartTotals, addItem } = require('./billingUtils');
 
-const PANEER = { _id: 'i1', name: 'Paneer Tikka', price: 100, category: 'Starters', available: true };
+const PANEER = {
+  _id: 'i1',
+  name: 'Paneer Tikka',
+  price: 100,
+  staffPrice: 70,
+  category: 'Starters',
+  available: true,
+};
 
 test('normalizeAudience trims/case-folds and rejects everything else', () => {
   assert.equal(AUDIENCES.length, 2);
@@ -43,14 +50,15 @@ test('audienceLabel maps the two audiences and is null otherwise', () => {
   assert.equal(audienceLabel(null), null);
 });
 
-test('audienceUnitPrice: customer keeps the menu price, staff is 60%', () => {
-  assert.equal(audienceUnitPrice(100, 'CUSTOMER'), 100);
-  assert.equal(audienceUnitPrice(100, 'STAFF'), 60);
-  assert.equal(audienceUnitPrice(99, 'STAFF'), 59.4);
-  assert.equal(audienceUnitPrice(100, null), 100);
-  assert.equal(audienceUnitPrice('100', 'STAFF'), 60);
-  assert.equal(audienceUnitPrice(-5, 'STAFF'), null);
-  assert.equal(audienceUnitPrice('abc', 'CUSTOMER'), null);
+test('audienceUnitPrice uses manual staff price and falls back to customer price', () => {
+  assert.equal(audienceUnitPrice({ price: 200, staffPrice: 100 }, 'CUSTOMER'), 200);
+  assert.equal(audienceUnitPrice({ price: 200, staffPrice: 100 }, 'STAFF'), 100);
+  assert.equal(audienceUnitPrice({ price: 200, staffPrice: null }, 'STAFF'), 200);
+  assert.equal(audienceUnitPrice({ price: 200, staffPrice: 0 }, 'STAFF'), 0);
+  assert.equal(audienceUnitPrice({ price: '100' }, 'STAFF'), 100);
+  assert.equal(audienceUnitPrice({ price: -5 }, 'STAFF'), null);
+  assert.equal(audienceUnitPrice({ price: 'abc' }, 'CUSTOMER'), null);
+  assert.equal(audienceUnitPrice(null, 'STAFF'), null);
 });
 
 test('cartForAudience reprices a display copy without mutating the source', () => {
@@ -63,21 +71,24 @@ test('cartForAudience reprices a display copy without mutating the source', () =
   assert.equal(cartTotals(customer).subtotal, 190);
 
   const staff = cartForAudience(cart, 'STAFF');
-  assert.equal(staff[0].price, 60);
-  assert.equal(staff[1].price, 27);
-  assert.equal(cartTotals(staff).subtotal, 114);
+  assert.equal(staff[0].price, 70);
+  assert.equal(staff[1].price, 45);
+  assert.equal(cartTotals(staff).subtotal, 160);
 
   // Source cart keeps the customer prices; only the returned copy changes.
   assert.equal(cart[0].price, 100);
   assert.equal(cart[1].price, 45);
 });
 
-test('changing audience changes the preview total (Rs100 -> Rs60)', () => {
-  const cart = [{ itemId: 'i1', name: 'Paneer', price: 100, quantity: 1 }];
-  assert.equal(cartTotals(cartForAudience(cart, 'CUSTOMER')).subtotal, 100);
-  assert.equal(cartTotals(cartForAudience(cart, 'STAFF')).subtotal, 60);
+test('changing audience changes the preview total using manual and fallback prices', () => {
+  const cart = [
+    { itemId: 'i1', name: 'Paneer', price: 100, staffPrice: 60, quantity: 1 },
+    { itemId: 'i2', name: 'Naan', price: 45, quantity: 1 },
+  ];
+  assert.equal(cartTotals(cartForAudience(cart, 'CUSTOMER')).subtotal, 145);
+  assert.equal(cartTotals(cartForAudience(cart, 'STAFF')).subtotal, 105);
   // No selection keeps the customer price for the preview.
-  assert.equal(cartTotals(cartForAudience(cart, null)).subtotal, 100);
+  assert.equal(cartTotals(cartForAudience(cart, null)).subtotal, 145);
 });
 
 test('buildPosPayload sends only audience + itemId/quantity and needs a selection', () => {

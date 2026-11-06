@@ -40,6 +40,7 @@ import {
 import {
   buildPosPayload,
   cartForAudience,
+  audienceUnitPrice,
   makeIdempotencyKey,
   normalizeAudience,
   parseBillDiscount,
@@ -106,7 +107,7 @@ export default function BillingScreen() {
       setLoading(true);
     }
     try {
-      const data = await getItems('customer');
+      const data = await getItems('staff');
       setItems(data);
       setError(null);
     } catch (loadError) {
@@ -177,8 +178,8 @@ export default function BillingScreen() {
     [items, query, categoryFilter],
   );
 
-  // Preview only. Both audiences use menu prices; a STAFF bill may then apply
-  // the admin-entered discount. The server recomputes every amount.
+  // Preview uses the selected audience's item prices. STAFF bills may also
+  // apply the admin-entered discount; the server recomputes every amount.
   const displayCart = useMemo(() => cartForAudience(cart, audience), [cart, audience]);
   const totals = useMemo(() => cartTotals(displayCart), [displayCart]);
   const discountResult = useMemo(() => parseBillDiscount(staffDiscount), [staffDiscount]);
@@ -314,7 +315,9 @@ export default function BillingScreen() {
             </View>
 
             <Text style={styles.cardCategory}>{item.category}</Text>
-            <Text style={styles.cardPrice}>{formatPrice(item.price)}</Text>
+            <Text style={styles.cardPrice}>
+              {formatPrice(audienceUnitPrice(item, audience))}
+            </Text>
             <Text style={[styles.cardAvail, !sellable && styles.cardAvailOff]}>
               {item.available === false ? 'Unavailable' : 'Available'}
             </Text>

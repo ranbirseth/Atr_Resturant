@@ -14,10 +14,7 @@ const itemSchema = new mongoose.Schema({
             message: 'price must be a finite number',
         },
     },
-    // Legacy staff-facing price. Kept ONLY so documents that predate P1.1
-    // remain readable and editable in unrelated fields. It is no longer
-    // required, no longer writable via the API, and is never used for pricing:
-    // the staff price is now derived as 60% of `price` in menuUtils.js.
+    // Optional manual staff price. Missing/null values fall back to `price`.
     staffPrice: {
         type: Number,
         min: [0, 'staffPrice must be greater than or equal to 0'],

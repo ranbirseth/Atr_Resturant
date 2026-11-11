@@ -290,9 +290,8 @@ function computeTodayPosRevenue(bills, now) {
   }, 0);
 }
 
-// Generated = recognized bill totals (OPEN + SETTLED), Collected = payments
-// received, Outstanding = unpaid balance. Voided bills are counted separately
-// and never contribute to money totals.
+// Recognized bill totals include OPEN + SETTLED; voided bills are counted
+// separately and never contribute to money totals.
 function computeTodayPosBillSummary(bills, now) {
   const today = selectTodayPosBills(bills, now);
   return computeBillSummary(today);
@@ -310,6 +309,9 @@ function computeBillSummary(today) {
     generated: 0,
     collected: 0,
     outstanding: 0,
+    total: 0,
+    staffPayments: 0,
+    customerPayments: 0,
   };
 
   for (let i = 0; i < today.length; i++) {
@@ -329,8 +331,16 @@ function computeBillSummary(today) {
     summary.generated += total;
     summary.collected += paid;
     summary.outstanding += due;
+
+    const audience = getBillAudience(bill);
+    if (audience === 'STAFF') {
+      summary.staffPayments += paid;
+    } else if (audience === 'CUSTOMER') {
+      summary.customerPayments += due;
+    }
   }
 
+  summary.total = summary.generated;
   return summary;
 }
 

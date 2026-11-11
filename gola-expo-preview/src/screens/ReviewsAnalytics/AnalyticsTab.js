@@ -342,17 +342,17 @@ export default function AnalyticsTab() {
             <Text style={styles.groupTitle}>Payments &amp; voids</Text>
             <View style={styles.breakdownRow}>
               <View style={styles.breakdownLeft}>
-                <Text style={styles.breakdownLabel}>Amount collected</Text>
-                <Text style={styles.breakdownSub}>Payments recorded on recognized bills</Text>
+                <Text style={styles.breakdownLabel}>Staff Payments</Text>
+                <Text style={styles.breakdownSub}>Paid on recognized STAFF bills</Text>
               </View>
-              <Text style={styles.breakdownValue}>{formatCurrency(analytics.amountPaid)}</Text>
+              <Text style={styles.breakdownValue}>{formatCurrency(analytics.staffPayments)}</Text>
             </View>
             <View style={styles.breakdownRow}>
               <View style={styles.breakdownLeft}>
-                <Text style={styles.breakdownLabel}>Balance due</Text>
-                <Text style={styles.breakdownSub}>On OPEN bills; settles when paid</Text>
+                <Text style={styles.breakdownLabel}>Customer Payments</Text>
+                <Text style={styles.breakdownSub}>Unpaid balance on recognized CUSTOMER bills</Text>
               </View>
-              <Text style={styles.breakdownValue}>{formatCurrency(analytics.balanceDue)}</Text>
+              <Text style={styles.breakdownValue}>{formatCurrency(analytics.customerPayments)}</Text>
             </View>
             <View style={styles.breakdownRow}>
               <View style={styles.breakdownLeft}>

@@ -23,11 +23,12 @@ const FILTERS = [
   { key: 'STAFF', label: 'Staff' },
 ];
 
-function SummaryCell({ label, value, accent }) {
+function SummaryCell({ label, value, accent, hint }) {
   return (
     <View style={styles.summaryCell}>
       <Text style={styles.summaryLabel}>{label}</Text>
       <Text style={[styles.summaryValue, accent ? { color: accent } : null]}>{value}</Text>
+      <Text style={styles.summaryHint}>{hint}</Text>
     </View>
   );
 }
@@ -66,19 +67,26 @@ export default function PosBillsToday({ bills, now }) {
       </Text>
 
       <View style={styles.summaryGrid}>
-        <SummaryCell label="Bills" value={String(summary.totalBills)} />
-        <SummaryCell label="Generated" value={formatCurrency(summary.generated)} accent={COLORS.text} />
-        <SummaryCell label="Collected" value={formatCurrency(summary.collected)} accent={COLORS.revenue} />
+        <SummaryCell label="Bills" value={String(summary.totalBills)} hint="All bills created today" />
         <SummaryCell
-          label="Outstanding"
-          value={formatCurrency(summary.outstanding)}
-          accent={summary.outstanding > 0 ? COLORS.pending : COLORS.text}
+          label="Total"
+          value={formatCurrency(summary.total)}
+          accent={COLORS.text}
+          hint="Total value of today's recognized bills"
+        />
+        <SummaryCell
+          label="Staff Payments"
+          value={formatCurrency(summary.staffPayments)}
+          accent={COLORS.revenue}
+          hint="Amount paid on today's staff bills"
+        />
+        <SummaryCell
+          label="Customer Payments"
+          value={formatCurrency(summary.customerPayments)}
+          accent={summary.customerPayments > 0 ? COLORS.pending : COLORS.text}
+          hint="Outstanding balance on today's customer bills"
         />
       </View>
-
-      <Text style={styles.summaryHint}>
-        Generated includes OPEN and SETTLED bills. Voided bills are excluded from money totals.
-      </Text>
 
       <View style={styles.filterRow}>
         {FILTERS.map(function (entry) {
@@ -211,8 +219,8 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   summaryHint: {
-    marginTop: SPACING.sm,
-    fontSize: 11,
+    marginTop: SPACING.xs,
+    fontSize: 10,
     color: COLORS.muted,
   },
   filterRow: {

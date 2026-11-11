@@ -184,6 +184,8 @@ test('computeBillAnalytics 1d: revenue/count/AOV with OPEN counted, VOID exclude
   assert.equal(result.totalRevenue, 670);
   assert.equal(result.amountPaid, 540);
   assert.equal(result.balanceDue, 130);
+  assert.equal(result.staffPayments, 300);
+  assert.equal(result.customerPayments, 130);
   assert.equal(result.voidedBills, 2);
   assert.equal(result.voidedTotal, 1100);
   assert.equal(result.avgOrderValue, 167.5);

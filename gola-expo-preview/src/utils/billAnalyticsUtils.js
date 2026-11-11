@@ -194,6 +194,8 @@ function computeBillAnalytics(bills, rangeKey, now) {
   let totalRevenue = 0;
   let amountPaid = 0;
   let balanceDue = 0;
+  let staffPayments = 0;
+  let customerPayments = 0;
   let voidedTotal = 0;
 
   for (let i = 0; i < inRange.length; i++) {
@@ -213,6 +215,11 @@ function computeBillAnalytics(bills, rangeKey, now) {
       totalRevenue += revenue;
       amountPaid += paid;
       balanceDue += due;
+      if (audience === 'STAFF') {
+        staffPayments += paid;
+      } else if (audience === 'CUSTOMER') {
+        customerPayments += due;
+      }
       aEntry.recognized += 1;
       oEntry.recognized += 1;
       aEntry.revenue += revenue;
@@ -241,6 +248,8 @@ function computeBillAnalytics(bills, rangeKey, now) {
     totalRevenue: totalRevenue,
     amountPaid: amountPaid,
     balanceDue: balanceDue,
+    staffPayments: staffPayments,
+    customerPayments: customerPayments,
     voidedTotal: voidedTotal,
     avgOrderValue: avgOrderValue,
     byAudience: byAudience,

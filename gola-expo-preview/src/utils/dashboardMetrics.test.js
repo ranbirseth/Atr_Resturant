@@ -374,6 +374,7 @@ test('computeTodayPosBillSummary separates generated, collected and outstanding'
     {
       origin: 'POS',
       status: 'OPEN',
+      audience: 'CUSTOMER',
       totalAmount: 300,
       amountPaid: 0,
       balanceDue: 300,
@@ -382,6 +383,7 @@ test('computeTodayPosBillSummary separates generated, collected and outstanding'
     {
       origin: 'POS',
       status: 'OPEN',
+      audience: 'STAFF',
       totalAmount: 200,
       amountPaid: 50,
       balanceDue: 150,
@@ -390,6 +392,7 @@ test('computeTodayPosBillSummary separates generated, collected and outstanding'
     {
       origin: 'POS',
       status: 'SETTLED',
+      audience: 'STAFF',
       totalAmount: 100,
       amountPaid: 100,
       balanceDue: 0,
@@ -420,7 +423,38 @@ test('computeTodayPosBillSummary separates generated, collected and outstanding'
     generated: 600,
     collected: 150,
     outstanding: 450,
+    total: 600,
+    staffPayments: 150,
+    customerPayments: 300,
   });
+});
+
+test('today bill payments are split by audience', () => {
+  const now = new Date('2026-10-11T03:30:00.000Z');
+  const summary = computeTodayBillSummary([
+    {
+      origin: 'POS',
+      audience: 'STAFF',
+      status: 'SETTLED',
+      totalAmount: 100,
+      amountPaid: 100,
+      balanceDue: 0,
+      createdAt: '2026-10-10T19:00:00.000Z',
+    },
+    {
+      origin: 'POS',
+      audience: 'CUSTOMER',
+      status: 'OPEN',
+      totalAmount: 100,
+      amountPaid: 30,
+      balanceDue: 70,
+      createdAt: '2026-10-10T20:00:00.000Z',
+    },
+  ], now);
+
+  assert.equal(summary.total, 200);
+  assert.equal(summary.staffPayments, 100);
+  assert.equal(summary.customerPayments, 70);
 });
 
 test('selectTodayPosBills keeps only POS bills from the current IST day', () => {

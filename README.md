@@ -1,4 +1,4 @@
-# 🍽️ GOLA Restaurant Management System
+# 🍽️ GOLA Restaurant Management System   ____
 
 A premium, full-stack restaurant management ecosystem designed for speed, accuracy, and real-time operations. The system bridges the gap between customer ordering, kitchen operations, administrative management, and direct thermal printing.
 
@@ -78,7 +78,10 @@ This is the primary tool for restaurant administrators, featuring direct hardwar
 ---
 
 ## 🛠️ Installation & Setup
+## 🔗 Quick Links
+- [Download the Android APK](https://drive.google.com/file/d/1n0su2VH8bQlNoHPFEXvZEYk8YE5BRb8w/view?usp=sharing)
 
+  
 ### Prerequisites
 - Node.js (v18+)
 - Android Device (for testing the Mobile App)
